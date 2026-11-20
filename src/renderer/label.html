@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>label</title>
+<link rel="stylesheet" href="label.css">
+<style>@page { margin: 0; } html, body { margin: 0; padding: 0; background: #fff; }</style>
+<script src="../../node_modules/jsbarcode/dist/JsBarcode.all.min.js"></script>
+<script src="../../node_modules/qrcode-generator/dist/qrcode.js"></script>
+<script src="../i18n/i18n.js"></script>
+<script src="label-render.js"></script>
+</head>
+<body>
+<div id="label" class="label-root"></div>
+<script>
+  window.renderLabel = function ({ data, template }) {
+    const el = document.getElementById('label');
+    el.style.width = template.width + 'mm';
+    el.style.height = template.height + 'mm';
+    el.innerHTML = window.LabelRender.templateHtml(template, data);
+    // 等图片加载完再打印
+    return Promise.all([...el.querySelectorAll('img')].map((img) => (img.complete ? null : new Promise((r) => { img.onload = img.onerror = r; }))));
+  };
+</script>
+</body>
+</html>

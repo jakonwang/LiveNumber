@@ -1,0 +1,8 @@
+node_modules/
+dist/
+# 生成文件 / 本地文件
+build/i18n/keys.json
+logs/
+*.log
+.DS_Store
+Thumbs.db

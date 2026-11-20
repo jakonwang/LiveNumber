@@ -1,0 +1,65 @@
+{
+  "name": "livenumber",
+  "version": "0.8.0",
+  "description": "TikTok 鐩存挱寮瑰箷鎵ｅ彿鎵撳崟宸ュ叿",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/rules.test.js && node test/store.test.js && node test/import.test.js && node test/shopnote.test.js && node test/i18n.test.js",
+    "dist": "electron-builder --win nsis --x64"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "devDependencies": {
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
+  },
+  "dependencies": {
+    "element-plus": "^2.14.8",
+    "jsbarcode": "^3.12.3",
+    "qrcode-generator": "^2.0.4",
+    "tiktok-live-connector": "^2.5.0",
+    "vue": "^3.5.46",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "productName": "LiveNumber",
+  "author": "LiveNumber",
+  "build": {
+    "appId": "com.livenumber.app",
+    "productName": "LiveNumber",
+    "copyright": "LiveNumber",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!src/smoke.js",
+      "!src/shots.js"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "LiveNumber 鐩存挱鎵ｅ彿鎵撳崟",
+      "artifactName": "LiveNumber-Setup-${version}.exe",
+      "deleteAppDataOnUninstall": false,
+      "language": "2052"
+    }
+  }
+}

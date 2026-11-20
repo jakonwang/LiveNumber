@@ -1,0 +1,1075 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>LiveNumber</title>
+<link rel="stylesheet" href="../../node_modules/element-plus/dist/index.css">
+<link rel="stylesheet" href="../../node_modules/element-plus/theme-chalk/dark/css-vars.css">
+<link rel="stylesheet" href="label.css">
+<link rel="stylesheet" href="style.css">
+<script>
+  // 尽早设置主题，避免启动闪白
+  try { const t = localStorage.getItem('theme') || 'dark'; document.documentElement.dataset.theme = t; document.documentElement.classList.toggle('dark', t === 'dark'); } catch {}
+</script>
+<script src="../../node_modules/vue/dist/vue.global.prod.js"></script>
+<script src="../../node_modules/element-plus/dist/index.full.min.js"></script>
+<script src="../../node_modules/jsbarcode/dist/JsBarcode.all.min.js"></script>
+<script src="../../node_modules/qrcode-generator/dist/qrcode.js"></script>
+<script src="../i18n/i18n.js"></script>
+<script src="../../node_modules/element-plus/dist/locale/zh-cn.min.js"></script>
+<script src="../../node_modules/element-plus/dist/locale/vi.min.js"></script>
+<script src="../../node_modules/element-plus/dist/locale/en.min.js"></script>
+<script src="../../node_modules/element-plus/dist/locale/th.min.js"></script>
+<script src="../../node_modules/element-plus/dist/locale/id.min.js"></script>
+<script src="../../node_modules/element-plus/dist/locale/ms.min.js"></script>
+<script src="label-render.js"></script>
+<script src="icons.js"></script>
+<script src="designer.js"></script>
+</head>
+<body>
+<div id="app" v-cloak>
+<div class="shell" :class="{ compact }" v-if="ready">
+
+  <!-- ============ 侧边栏 ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <img class="brand-mark" src="../assets/logo.svg" alt="LiveNumber">
+      <div class="brand-text">
+        <div class="brand-name">LiveNumber</div>
+        <div class="brand-sub">{{ $t('直播扣号打单 · v') }}{{ version }}</div>
+      </div>
+    </div>
+    <div class="nav-section">{{ $t('工作台') }}</div>
+    <div v-for="n in NAV.slice(0, 4)" :key="n.key" class="nav-item" :class="{ active: page === n.key }" :title="compact ? n.label + $t('（Ctrl+') + (NAV.indexOf(n) + 1) + $t('）') : ''" @click="go(n.key)">
+      <span class="nav-icon"><ui-icon :name="n.icon"></ui-icon></span><span class="nav-label">{{ n.label }}</span>
+      <span v-if="n.badge && n.badge()" class="nav-badge">{{ n.badge() }}</span>
+    </div>
+    <div class="nav-section">{{ $t('数据') }}</div>
+    <div v-for="n in NAV.slice(4, 8)" :key="n.key" class="nav-item" :class="{ active: page === n.key }" :title="compact ? n.label + $t('（Ctrl+') + (NAV.indexOf(n) + 1) + $t('）') : ''" @click="go(n.key)">
+      <span class="nav-icon"><ui-icon :name="n.icon"></ui-icon></span><span class="nav-label">{{ n.label }}</span>
+      <span v-if="n.badge && n.badge()" class="nav-badge">{{ n.badge() }}</span>
+    </div>
+    <div class="nav-section">{{ $t('系统') }}</div>
+    <div v-for="n in NAV.slice(8)" :key="n.key" class="nav-item" :class="{ active: page === n.key }" :title="compact ? n.label + $t('（Ctrl+') + (NAV.indexOf(n) + 1) + $t('）') : ''" @click="go(n.key)">
+      <span class="nav-icon"><ui-icon :name="n.icon"></ui-icon></span><span class="nav-label">{{ n.label }}</span>
+    </div>
+
+    <div class="sidebar-foot">
+      <div class="mini-card" v-if="!compact">
+        <div class="row"><span class="muted">{{ $t('打印机') }}</span><span class="spacer"></span><span :class="s.print.printer ? 'ok' : 'warn'">{{ s.print.printer ? $t('已选择') : $t('未选择') }}</span></div>
+        <div class="small" style="margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.print.printer || $t('请到控制台选择打印机') }}</div>
+      </div>
+      <el-select v-if="!compact" v-model="uiLang" size="small" class="lang-select" @change="changeLang">
+        <template #prefix><ui-icon name="globe" :size="13"></ui-icon></template>
+        <el-option v-for="l in LANGS" :key="l.code" :label="l.label" :value="l.code"></el-option>
+      </el-select>
+      <button v-else type="button" class="collapse-btn" :title="LANGS.find((l) => l.code === uiLang)?.label" @click="toggleSidebar"><ui-icon name="globe" :size="14"></ui-icon></button>
+      <div class="theme-toggle">
+        <button type="button" :class="{ on: s.theme === 'dark' }" :title="$t('深色')" @click="setTheme('dark')"><ui-icon name="moon" :size="14"></ui-icon><span class="nav-label">{{ $t('深色') }}</span></button>
+        <button type="button" :class="{ on: s.theme === 'light' }" :title="$t('浅色')" @click="setTheme('light')"><ui-icon name="sun" :size="14"></ui-icon><span class="nav-label">{{ $t('浅色') }}</span></button>
+      </div>
+      <button type="button" class="collapse-btn" :title="compact ? $t('展开侧边栏') : $t('收起侧边栏')" @click="toggleSidebar"><ui-icon :name="compact ? 'chevronRight' : 'chevronLeft'" :size="14"></ui-icon><span class="nav-label">{{ $t('收起') }}</span></button>
+    </div>
+  </aside>
+
+  <!-- ============ 主区域 ============ -->
+  <main class="workspace">
+    <header class="topbar">
+      <div class="title-block">
+        <div class="page-title">{{ currentNav.label }}</div>
+        <div class="page-sub">{{ currentNav.sub }}</div>
+      </div>
+      <span class="spacer"></span>
+      <div class="live-bar">
+        <span class="at">@</span>
+        <el-input v-model="s.liveUser" :placeholder="$t('主播用户名或直播链接')" size="small" :disabled="liveBusy" class="live-input" @keyup.enter="!liveBusy && connect()"></el-input>
+        <el-select v-model="s.browserMode" size="small" style="width:108px" :disabled="liveBusy">
+          <el-option :label="$t('第三方模式')" :value="false"></el-option>
+          <el-option :label="$t('浏览器模式')" :value="true"></el-option>
+        </el-select>
+        <el-button v-if="!liveBusy" type="primary" size="small" @click="connect"><ui-icon name="play" :size="13"></ui-icon>&nbsp;{{ $t('连接') }}</el-button>
+        <el-button v-else type="danger" size="small" plain @click="disconnect"><ui-icon name="stop" :size="13"></ui-icon>&nbsp;{{ $t('断开') }}</el-button>
+      </div>
+      <el-tooltip :content="status.error || statusText" placement="bottom">
+        <span class="pill" :class="status.status"><span class="dot"></span>{{ statusShort }}</span>
+      </el-tooltip>
+      <el-button v-if="s.browserMode && liveBusy" size="small" text @click="api.invoke('live:showBrowser')">{{ $t('直播间窗口') }}</el-button>
+      <el-tooltip :content="$t('悬浮大屏（主播看 / OBS 叠加）　F8')" placement="bottom">
+        <span class="pill" :class="screenOpen ? 'print-on' : 'print-off'" @click="toggleScreen"><ui-icon name="monitor" :size="13"></ui-icon>{{ $t('大屏') }}</span>
+      </el-tooltip>
+      <el-tooltip :content="(s.print.enabled ? $t('点击暂停打印（命中仍会记录）') : $t('点击开启打印')) + $t('　F9')" placement="bottom">
+        <span class="pill" :class="s.print.enabled ? 'print-on' : 'print-off'" @click="togglePrint">
+          <ui-icon name="printer" :size="13"></ui-icon>{{ s.print.enabled ? $t('打印开启') : $t('打印暂停') }}
+        </span>
+      </el-tooltip>
+    </header>
+
+    <section class="page">
+
+      <!-- ================= 直播控制台 ================= -->
+      <div v-show="page === 'console'" class="console">
+        <div class="console-main">
+          <div class="session-bar panel">
+            <span class="ic"><ui-icon name="calendar" :size="16"></ui-icon></span>
+            <template v-if="session">
+              <span class="muted">{{ $t('当前场次') }}</span><b>{{ session.name }}</b>
+              <span class="muted small">{{ hms(session.startAt).slice(0, 5) }} {{ $t('开始 ·') }} {{ sessionMinutes }}</span>
+              <el-button link size="small" type="primary" @click="renameSession">{{ $t('改名') }}</el-button>
+            </template>
+            <span v-else class="muted">{{ $t('没有进行中的场次，第一单进来时会自动开始') }}</span>
+            <span class="spacer"></span>
+            <el-button size="small" @click="startSession"><ui-icon name="plus" :size="13"></ui-icon>&nbsp;{{ $t('开始新场次') }}</el-button>
+            <el-button size="small" plain :disabled="!session" @click="endSession">{{ $t('结束本场') }}</el-button>
+            <el-button size="small" type="primary" plain :disabled="!session" @click="openSummary(session)"><ui-icon name="clipboard" :size="13"></ui-icon>&nbsp;{{ $t('本场发货汇总') }}</el-button>
+          </div>
+          <div class="kpis">
+            <div class="panel kpi"><div class="k-label">{{ $t('今日订单') }}</div><div class="k-value">{{ today.orders }}</div><div class="k-sub">{{ $t('本次运行') }} {{ stats.total }} {{ $t('单') }}</div></div>
+            <div class="panel kpi"><div class="k-label">{{ $t('今日买家') }}</div><div class="k-value">{{ today.buyers }}</div><div class="k-sub">{{ $t('新客户') }} {{ today.newBuyers }}</div></div>
+            <div class="panel kpi"><div class="k-label">{{ $t('今日销售额') }}</div><div class="k-value">{{ money(today.amount) }}</div><div class="k-sub">{{ $t('按商品价格 / 成交价') }}</div></div>
+            <div class="panel kpi"><div class="k-label">{{ $t('打印队列') }}</div><div class="k-value"><span :class="stats.queue ? 'warn' : ''">{{ stats.queue }}</span><span class="muted" style="font-size:14px"> {{ $t('排队') }}</span></div><div class="k-sub">{{ $t('失败') }} <span :class="stats.failed ? 'danger' : ''">{{ stats.failed }}</span> {{ $t('· 流水') }} {{ counters.serial }}</div></div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><span class="ic"><ui-icon name="zap"></ui-icon></span>{{ $t('最新命中') }}</div>
+              <span class="spacer"></span>
+              <span class="muted small">{{ $t('新命中会高亮') }}</span>
+            </div>
+            <div class="hits">
+              <div v-for="(h, i) in hits" :key="h.id" class="hit-card" :class="{ fresh: i === 0 && now - h.time < 8000 && !h.cancelled, cancelled: h.cancelled }">
+                <span class="h-status">
+                  <el-tag v-if="h.cancelled" size="small" type="info" effect="dark" round>{{ $t('已取消') }}</el-tag>
+                  <el-tag v-else-if="h.status === 'ok'" size="small" type="success" effect="dark" round>{{ $t('已打印') }}</el-tag>
+                  <el-tag v-else-if="h.status === 'fail'" size="small" type="danger" effect="dark" round>{{ $t('失败') }}</el-tag>
+                  <el-tag v-else-if="h.status === 'pending'" size="small" type="warning" round>{{ $t('打印中') }}</el-tag>
+                  <el-tag v-else size="small" type="info" round>{{ $t('未打印') }}</el-tag>
+                </span>
+                <div class="h-code-row"><span class="h-code">{{ h.codeText || '—' }}</span><span v-if="h.isNew" class="badge-new">{{ $t('新客') }}</span></div>
+                <div class="h-name" :title="h.nickname">{{ h.nickname || h.uniqueId }}</div>
+                <div class="h-meta">@{{ h.uniqueId }} · {{ hms(h.time) }}</div>
+                <div class="h-content" :title="h.productName || ''">{{ h.auction ? $t('成交 ') + money(h.amount) : h.content }}{{ h.productName ? ' · ' + h.productName : '' }}</div>
+                <button v-if="!h.cancelled && h.status !== 'pending'" type="button" class="h-reprint" :class="{ bad: h.status === 'fail' }" :title="$t('重新打印编号 ') + h.codeText" @click="reprint(h)">
+                  <ui-icon name="printer" :size="12"></ui-icon>{{ $t('重打') }}
+                </button>
+              </div>
+              <div v-if="!hits.length" class="hits-empty">{{ $t('还没有命中。连接直播间，或用下面的「模拟弹幕」试一下。') }}</div>
+            </div>
+          </div>
+
+          <div class="panel stream">
+            <div class="panel-head">
+              <div class="panel-title"><span class="ic"><ui-icon name="message"></ui-icon></span>{{ $t('弹幕流') }}</div>
+              <span class="muted small">{{ chats.length }} {{ $t('条') }}</span>
+              <span class="spacer"></span>
+              <el-checkbox v-model="onlyHits" size="small">{{ $t('只看命中') }}</el-checkbox>
+              <el-button size="small" text @click="chats = []">{{ $t('清空') }}</el-button>
+            </div>
+            <div class="sim-bar">
+              <span class="sim-label"><ui-icon name="flask" :size="13"></ui-icon>{{ $t('模拟测试') }}</span>
+              <el-input v-model="sim.uniqueId" :placeholder="$t('用户名')" style="width:110px" size="small"></el-input>
+              <el-input v-model="sim.nickname" :placeholder="$t('昵称')" style="width:100px" size="small"></el-input>
+              <el-input v-model="sim.comment" :placeholder="$t('弹幕内容，如 15，回车发送')" class="flex1" style="min-width:150px" size="small" @keyup.enter="sendSim"></el-input>
+              <el-button size="small" @click="sendSim">{{ $t('发送') }}</el-button>
+              <el-button size="small" @click="randomSim">{{ $t('随机一条') }}</el-button>
+            </div>
+            <div class="table-wrap" style="flex:1;min-height:0;display:flex">
+              <el-table :data="shownChats" height="100%" size="small" :empty-text="$t('暂无弹幕')" :row-class-name="chatRowClass" style="flex:1">
+                <el-table-column :label="$t('时间')" width="78"><template #default="{row}"><span class="mono muted">{{ hms(row.time) }}</span></template></el-table-column>
+                <el-table-column prop="uniqueId" :label="$t('用户名')" min-width="110" show-overflow-tooltip></el-table-column>
+                <el-table-column prop="nickname" :label="$t('昵称')" min-width="110" show-overflow-tooltip></el-table-column>
+                <el-table-column prop="comment" :label="$t('内容')" min-width="120" show-overflow-tooltip></el-table-column>
+                <el-table-column :label="$t('结果')" min-width="160" show-overflow-tooltip>
+                  <template #default="{row}">
+                    <span :class="row.cancel ? 'warn' : row.hit ? 'ok' : 'muted'">{{ row.result }}</span>
+                    <template v-if="row.recId">
+                      <span class="mono ml8">{{ row.codeText }}</span>
+                      <el-tag v-if="row.cancelled" size="small" type="info" class="ml8">{{ $t('已取消') }}</el-tag>
+                      <el-tag v-else-if="row.printStatus === 'ok'" size="small" type="success" class="ml8">{{ $t('已打印') }}</el-tag>
+                      <el-tag v-else-if="row.printStatus === 'fail'" size="small" type="danger" effect="dark" class="ml8">{{ $t('打印失败') }}</el-tag>
+                      <el-tag v-else-if="row.printStatus === 'pending'" size="small" type="warning" class="ml8">{{ $t('打印中') }}</el-tag>
+                      <el-tag v-else size="small" type="info" class="ml8">{{ $t('未打印') }}</el-tag>
+                    </template>
+                    <el-tag v-if="row.simulated" size="small" type="info" class="ml8">{{ $t('模拟') }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="" width="132">
+                  <template #default="{row}">
+                    <el-button v-if="row.recId && !row.cancelled" link :type="row.printStatus === 'fail' ? 'danger' : 'primary'" size="small" :disabled="row.printStatus === 'pending'" @click="reprintChat(row)">{{ $t('重打') }}</el-button>
+                    <el-button link type="danger" size="small" @click="blacklistUser(row)">{{ $t('拉黑') }}</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><span class="ic"><ui-icon name="terminal"></ui-icon></span>{{ $t('运行日志') }}</div>
+              <span class="spacer"></span>
+              <el-button size="small" text @click="logs = []">{{ $t('清空') }}</el-button>
+            </div>
+            <div class="logs" ref="logBox">
+              <div v-for="(l, i) in logs" :key="i" :class="'log-' + l.level"><span class="log-time">{{ hms(l.time) }}</span>{{ l.text }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右侧设置 -->
+        <div class="console-side">
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title"><span class="ic"><ui-icon name="target"></ui-icon></span>{{ $t('扣号模式') }}</div></div>
+            <div class="panel-body">
+              <div class="seg">
+                <button type="button" :class="{ on: s.grab.mode === 'unlimited' }" @click="s.grab.mode = 'unlimited'">{{ $t('无限制') }}</button>
+                <button type="button" :class="{ on: s.grab.mode === 'grab' }" @click="s.grab.mode = 'grab'">{{ $t('抢单') }}</button>
+                <button type="button" :class="{ on: s.grab.mode === 'auction' }" @click="s.grab.mode = 'auction'">{{ $t('竞拍') }}</button>
+              </div>
+
+              <template v-if="s.grab.mode !== 'auction'">
+                <div class="field-row" v-if="s.grab.mode === 'grab'">
+                  {{ $t('每个号码限') }} <el-input-number v-model="s.grab.limit" :min="1" :max="999" size="small" controls-position="right" style="width:72px"></el-input-number>
+                  {{ $t('人 ·') }} <el-input-number v-model="s.grab.seconds" :min="1" :max="3600" size="small" controls-position="right" style="width:80px"></el-input-number> {{ $t('秒') }}
+                </div>
+                <div class="muted small" v-else>{{ $t('每条命中的弹幕都打印，不限人数。') }}</div>
+                <div class="slots">
+                  <div class="slot" v-for="i in 3" :key="i" :class="{ live: grabSlots[i-1] }">
+                    <template v-if="grabSlots[i-1]">
+                      <div><div class="big accent">{{ grabSlots[i-1].key }}</div><div class="cap">{{ $t('号码') }}</div></div>
+                      <div><div class="big">{{ grabSlots[i-1].count }}</div><div class="cap">{{ $t('已抢') }}</div></div>
+                      <div><div class="big">{{ grabSlots[i-1].left }}</div><div class="cap">{{ $t('秒') }}</div></div>
+                      <div class="timer-bar"><i :style="{ width: Math.min(100, grabSlots[i-1].left / s.grab.seconds * 100) + '%' }"></i></div>
+                    </template>
+                    <template v-else>
+                      <div><div class="big dim">–</div><div class="cap">{{ $t('号码') }}</div></div>
+                      <div><div class="big dim">0</div><div class="cap">{{ $t('已抢') }}</div></div>
+                      <div><div class="big dim">0</div><div class="cap">{{ $t('秒') }}</div></div>
+                    </template>
+                  </div>
+                </div>
+                <div class="row"><span class="spacer"></span><el-button size="small" text @click="api.invoke('grab:reset')"><ui-icon name="refresh" :size="13"></ui-icon>&nbsp;{{ $t('重置倒计时') }}</el-button></div>
+              </template>
+
+              <template v-else>
+                <div class="field-row">
+                  {{ $t('时长') }} <el-input-number v-model="s.auction.seconds" :min="5" :max="3600" size="small" controls-position="right" style="width:84px"></el-input-number> {{ $t('秒 起拍') }} <el-input-number v-model="s.auction.minPrice" :min="0" size="small" controls-position="right" style="width:104px"></el-input-number>
+                </div>
+                <div class="field-row">
+                  {{ $t('加价≥') }} <el-input-number v-model="s.auction.step" :min="0" size="small" controls-position="right" style="width:96px"></el-input-number>
+                  {{ $t('延时') }} <el-input-number v-model="s.auction.extendSeconds" :min="0" :max="120" size="small" controls-position="right" style="width:76px"></el-input-number> {{ $t('秒') }}
+                  <el-tooltip :content="$t('最后 N 秒内有人出价，倒计时重置为 N 秒，防止最后一秒抢拍。0 = 不延时')"><span class="muted"><ui-icon name="help" :size="14"></ui-icon></span></el-tooltip>
+                </div>
+                <div class="field-row">
+                  <el-radio-group v-model="s.auction.startMode" size="small">
+                    <el-radio value="auto">{{ $t('出价自动开始') }}</el-radio>
+                    <el-radio value="manual">{{ $t('手动开始') }}</el-radio>
+                  </el-radio-group>
+                  <el-checkbox v-model="s.auction.kSuffix" size="small">150k=150000</el-checkbox>
+                </div>
+                <div class="slot" :class="{ live: auctionState.active }">
+                  <div><div class="big accent" :style="{ fontSize: amountFont }">{{ auctionState.active ? money(auctionState.amount) : '–' }}</div><div class="cap">{{ $t('最高价') }}</div></div>
+                  <div><div class="big" :class="{ dim: !auctionState.active }">{{ auctionState.active ? auctionState.count : 0 }}</div><div class="cap">{{ $t('出价') }}</div></div>
+                  <div><div class="big" :class="{ dim: !auctionState.active }">{{ auctionState.active ? auctionState.left : 0 }}</div><div class="cap">{{ $t('秒') }}</div></div>
+                  <div class="timer-bar" v-if="auctionState.active"><i :style="{ width: Math.min(100, auctionState.left / s.auction.seconds * 100) + '%' }"></i></div>
+                </div>
+                <div class="leader">{{ $t('领先：') }}<b>{{ auctionState.active && auctionState.leader ? auctionState.leader : '—' }}</b></div>
+                <div class="row">
+                  <el-button size="small" type="primary" :disabled="auctionState.active" @click="api.invoke('auction:start')">{{ $t('开始竞拍') }}</el-button>
+                  <el-button size="small" type="warning" plain :disabled="!auctionState.active" @click="api.invoke('auction:finish')">{{ $t('立即成交') }}</el-button>
+                  <el-button size="small" :disabled="!auctionState.active" @click="api.invoke('auction:cancel')">{{ $t('取消本轮') }}</el-button>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title"><span class="ic"><ui-icon name="printer"></ui-icon></span>{{ $t('打印设置') }}</div></div>
+            <div class="panel-body">
+              <div class="field-row">
+                <span class="lbl">{{ $t('打印机') }}</span>
+                <el-select v-model="s.print.printer" size="small" :placeholder="$t('选择打印机')" class="flex1">
+                  <el-option v-for="p in printers" :key="p.name" :label="p.displayName + (p.isDefault ? $t('（默认）') : '')" :value="p.name"></el-option>
+                </el-select>
+                <el-tooltip :content="$t('刷新打印机列表')"><el-button size="small" text @click="refreshPrinters"><ui-icon name="refresh" :size="14"></ui-icon></el-button></el-tooltip>
+              </div>
+              <div class="field-row">
+                <span class="lbl">{{ $t('模板') }}</span>
+                <el-select v-model="s.activeTemplate" size="small" class="flex1">
+                  <el-option v-for="t in s.templates" :key="t.id" :label="t.name + ' ' + t.width + '×' + t.height" :value="t.id"></el-option>
+                </el-select>
+                <el-button size="small" @click="showDesigner = true">{{ $t('设计') }}</el-button>
+              </div>
+              <div class="field-row">
+                <span class="lbl">{{ $t('编号生成') }}</span>
+                <el-radio-group v-model="s.code.mode" size="small">
+                  <el-radio value="increment">{{ $t('递增') }}</el-radio>
+                  <el-radio value="fill">{{ $t('补缺') }}</el-radio>
+                  <el-radio value="shared">{{ $t('共享') }}</el-radio>
+                </el-radio-group>
+              </div>
+              <div class="field-row" v-if="s.code.mode === 'shared'">
+                <span class="lbl">{{ $t('主机地址') }}</span>
+                <el-input v-model="s.share.serverUrl" size="small" placeholder="http://192.168.1.10:18620" class="flex1"></el-input>
+                <el-button size="small" text type="primary" @click="pingShare">{{ $t('测试') }}</el-button>
+              </div>
+              <div class="field-row">
+                <span class="lbl">{{ $t('客户编号') }}</span>
+                <template v-if="s.code.mode !== 'shared'">
+                  <span>{{ $t('下一个') }} <b class="mono">{{ codeText(nextCodePreview) }}</b></span>
+                  <el-button v-if="s.code.mode === 'increment'" link size="small" type="primary" @click="setNextCode">{{ $t('设置') }}</el-button>
+                  <el-button link size="small" type="danger" @click="resetCustomers">{{ $t('归零') }}</el-button>
+                </template>
+                <span v-else class="muted">{{ $t('由主机分配') }}</span>
+              </div>
+              <div class="field-row">
+                <span class="lbl">{{ $t('序号头') }}</span>
+                <el-switch v-model="s.code.prefixEnabled" size="small"></el-switch>
+                <el-input v-model="s.code.prefix" size="small" style="width:56px" :disabled="!s.code.prefixEnabled"></el-input>
+                <el-select v-model="s.code.maxDigits" size="small" style="width:84px">
+                  <el-option v-for="d in [3,4,5,6]" :key="d" :label="$t('限') + d + $t('位')" :value="d"></el-option>
+                </el-select>
+              </div>
+              <div class="field-row">
+                <span class="lbl">{{ $t('流水') }}</span>
+                <span class="mono">{{ counters.serial }}</span>
+                <el-button link size="small" type="danger" @click="resetSerial">{{ $t('归零') }}</el-button>
+              </div>
+              <div class="field-row">
+                <span class="lbl">{{ $t('主播备注') }}</span>
+                <el-input v-model="s.hostNote" size="small" :placeholder="$t('印在「主播备注」组件上')" class="flex1" clearable></el-input>
+              </div>
+              <div class="row"><el-button size="small" @click="testPrint"><ui-icon name="printer" :size="13"></ui-icon>&nbsp;{{ $t('打印测试') }}</el-button></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title"><span class="ic"><ui-icon name="filter"></ui-icon></span>{{ $t('监控规则') }}</div></div>
+            <div class="panel-body">
+              <div class="seg">
+                <button type="button" :class="{ on: s.monitor.limitMode === 'none' }" @click="s.monitor.limitMode = 'none'">{{ $t('不限号码') }}</button>
+                <button type="button" :class="{ on: s.monitor.limitMode === 'range' }" @click="s.monitor.limitMode = 'range'">{{ $t('区间') }}</button>
+                <button type="button" :class="{ on: s.monitor.limitMode === 'specific' }" @click="s.monitor.limitMode = 'specific'">{{ $t('特定/多区间') }}</button>
+              </div>
+              <div class="field-row" v-if="s.monitor.limitMode === 'range'">
+                <el-input-number v-model="s.monitor.min" :min="0" size="small" controls-position="right" style="width:110px"></el-input-number>
+                <span class="muted">{{ $t('至') }}</span>
+                <el-input-number v-model="s.monitor.max" :min="0" size="small" controls-position="right" style="width:110px"></el-input-number>
+              </div>
+              <div class="field-row" v-if="s.monitor.limitMode === 'specific'">
+                <el-input v-model="s.monitor.specific" size="small" :placeholder="$t('如 1,5,10-20,100-150')"></el-input>
+              </div>
+              <el-checkbox v-model="s.monitor.pureNumber" size="small">{{ $t('纯数字（如 “15”）') }}</el-checkbox>
+              <el-checkbox v-model="s.monitor.numberWithText" size="small">{{ $t('数字+文字（如 “lấy 15 nha”）') }}</el-checkbox>
+              <div class="field-row">
+                <el-checkbox v-model="s.monitor.keywordEnabled" size="small">{{ $t('特定文字') }}</el-checkbox>
+                <el-radio-group v-model="s.monitor.keywordExact" size="small" :disabled="!s.monitor.keywordEnabled">
+                  <el-radio :value="false">{{ $t('模糊') }}</el-radio>
+                  <el-radio :value="true">{{ $t('精准') }}</el-radio>
+                </el-radio-group>
+              </div>
+              <el-input v-if="s.monitor.keywordEnabled" v-model="s.monitor.keywords" size="small" :placeholder="$t('多个用逗号分隔，如 chốt, lấy')"></el-input>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 打印历史 ================= -->
+      <div v-if="page === 'history'" class="panel">
+        <div class="toolbar">
+          <el-date-picker v-model="hq.range" type="datetimerange" size="small" :start-placeholder="$t('开始时间')" :end-placeholder="$t('结束时间')" style="width:320px"></el-date-picker>
+          <el-select v-model="hq.status" size="small" style="width:96px">
+            <el-option :label="$t('全部')" value="all"></el-option>
+            <el-option :label="$t('成功')" value="ok"></el-option>
+            <el-option :label="$t('失败')" value="fail"></el-option>
+            <el-option :label="$t('未打印')" value="off"></el-option>
+            <el-option :label="$t('已取消')" value="cancelled"></el-option>
+          </el-select>
+          <el-select v-model="hq.sessionId" size="small" style="width:150px" :placeholder="$t('全部场次')" clearable>
+            <el-option v-for="x in sessions" :key="x.id" :label="x.name" :value="x.id"></el-option>
+          </el-select>
+          <el-input v-model="hq.serial" :placeholder="$t('流水')" size="small" style="width:76px"></el-input>
+          <el-input v-model="hq.code" :placeholder="$t('编号')" size="small" style="width:76px"></el-input>
+          <el-input v-model="hq.uniqueId" :placeholder="$t('用户名')" size="small" style="width:120px"></el-input>
+          <el-input v-model="hq.nickname" :placeholder="$t('昵称')" size="small" style="width:110px"></el-input>
+          <el-input v-model="hq.content" :placeholder="$t('内容')" size="small" style="width:90px" @keyup.enter="loadHistory"></el-input>
+          <el-checkbox v-model="hq.exact" size="small">{{ $t('精准') }}</el-checkbox>
+          <el-button size="small" type="primary" @click="loadHistory"><ui-icon name="search" :size="13"></ui-icon>&nbsp;{{ $t('查询') }}</el-button>
+          <el-button size="small" @click="exportHistory"><ui-icon name="download" :size="13"></ui-icon>&nbsp;{{ $t('导出') }}</el-button>
+          <span class="spacer"></span>
+          <span class="count-tag">{{ $t('共') }} <b>{{ history.total }}</b> {{ $t('条') }}</span>
+        </div>
+        <div class="table-wrap">
+          <el-table :data="history.rows" height="calc(100vh - 190px)" size="small" :empty-text="$t('暂无数据')" :row-class-name="({ row }) => (row.cancelled ? 'row-cancelled' : '')">
+            <el-table-column :label="$t('时间')" width="150"><template #default="{row}"><span class="mono muted">{{ fullTime(row.time) }}</span></template></el-table-column>
+            <el-table-column :label="$t('编号')" width="70"><template #default="{row}"><b class="mono">{{ row.codeText || '—' }}</b></template></el-table-column>
+            <el-table-column :label="$t('用户')" min-width="170" show-overflow-tooltip>
+              <template #default="{row}">{{ row.nickname || row.uniqueId }}<span v-if="row.isNew" class="badge-new">{{ $t('新') }}</span><div class="muted small">@{{ row.uniqueId }}</div></template>
+            </el-table-column>
+            <el-table-column :label="$t('内容')" width="110" show-overflow-tooltip><template #default="{row}">{{ row.auction ? $t('竞拍 ') + money(row.amount) : row.content }}</template></el-table-column>
+            <el-table-column :label="$t('商品')" min-width="140" show-overflow-tooltip>
+              <template #default="{row}"><span v-if="row.productName">{{ row.productName }} <span class="muted">{{ row.price != null ? money(row.price) : '' }}</span></span><span v-else class="muted">—</span></template>
+            </el-table-column>
+            <el-table-column :label="$t('流水')" width="70"><template #default="{row}"><span class="mono">{{ row.serial }}</span></template></el-table-column>
+            <el-table-column :label="$t('状态')" width="80">
+              <template #default="{row}">
+                <el-tooltip v-if="row.cancelled" :content="(row.cancelledBy === 'buyer' ? $t('买家发弹幕取消') : $t('手动取消')) + ' · ' + hms(row.cancelledAt)"><el-tag type="info" size="small" effect="dark">{{ $t('已取消') }}</el-tag></el-tooltip>
+                <el-tag v-else-if="row.status==='ok'" type="success" size="small">{{ $t('成功') }}</el-tag>
+                <el-tooltip v-else-if="row.status==='fail'" :content="row.error || $t('失败')"><el-tag type="danger" size="small">{{ $t('失败') }}</el-tag></el-tooltip>
+                <el-tag v-else-if="row.status==='pending'" type="warning" size="small">{{ $t('打印中') }}</el-tag>
+                <el-tag v-else type="info" size="small">{{ $t('未打印') }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="$t('操作')" width="140" fixed="right">
+              <template #default="{row}">
+                <el-button link size="small" type="primary" :disabled="row.cancelled" @click="reprint(row)">{{ $t('重打') }}</el-button>
+                <el-button v-if="!row.cancelled" link size="small" type="warning" @click="cancelRow(row)">{{ $t('取消') }}</el-button>
+                <el-button v-else link size="small" type="success" @click="restoreRow(row)">{{ $t('恢复') }}</el-button>
+                <el-button link size="small" type="danger" @click="blacklistUser(row)">{{ $t('拉黑') }}</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </div>
+
+      <!-- ================= 发货汇总 ================= -->
+      <div v-if="page === 'summary'" class="page-grid">
+        <div class="panel">
+          <div class="toolbar">
+            <el-select v-model="sm.sessionId" size="small" style="width:220px" :placeholder="$t('选择场次')" @change="loadSummary">
+              <el-option :label="$t('按日期范围')" value=""></el-option>
+              <el-option v-for="x in sessions" :key="x.id" :label="x.name + $t('（') + x.orders + $t(' 单）') + (x.endAt ? '' : $t(' · 进行中'))" :value="x.id"></el-option>
+            </el-select>
+            <el-date-picker v-if="!sm.sessionId" v-model="sm.range" type="datetimerange" size="small" style="width:320px" @change="loadSummary"></el-date-picker>
+            <el-button size="small" @click="loadSummary"><ui-icon name="refresh" :size="13"></ui-icon>&nbsp;{{ $t('刷新') }}</el-button>
+            <span class="spacer"></span>
+            <el-button size="small" @click="summaryAction('export')"><ui-icon name="download" :size="13"></ui-icon>&nbsp;{{ $t('导出 Excel') }}</el-button>
+            <el-button size="small" @click="summaryAction('pdf')"><ui-icon name="download" :size="13"></ui-icon>&nbsp;{{ $t('导出 PDF') }}</el-button>
+            <el-button size="small" @click="summaryAction('printA4')"><ui-icon name="printer" :size="13"></ui-icon>&nbsp;{{ $t('打印 A4') }}</el-button>
+            <el-button size="small" type="primary" @click="printSummaryLabels"><ui-icon name="printer" :size="13"></ui-icon>&nbsp;{{ $t('打印发货单') }}</el-button>
+          </div>
+        </div>
+        <div class="kpis">
+          <div class="panel kpi"><div class="k-label">{{ $t('客户') }}</div><div class="k-value">{{ sm.data.totals.customers }}</div><div class="k-sub">{{ $t('要打包的份数') }}</div></div>
+          <div class="panel kpi"><div class="k-label">{{ $t('件数') }}</div><div class="k-value">{{ sm.data.totals.qty }}</div><div class="k-sub">{{ $t('已扣除取消的订单') }}</div></div>
+          <div class="panel kpi"><div class="k-label">{{ $t('合计金额') }}</div><div class="k-value">{{ money(sm.data.totals.amount) }}</div><div class="k-sub">{{ $t('商品价格 / 号码计价 / 成交价') }}</div></div>
+          <div class="panel kpi"><div class="k-label">{{ $t('新客户') }}</div><div class="k-value">{{ sm.data.customers.filter(c => c.isNew).length }}</div><div class="k-sub">{{ $t('本范围内第一次下单') }}</div></div>
+        </div>
+        <div class="panel">
+          <div class="toolbar">
+            <el-input v-model="sm.search" :placeholder="$t('搜索编号 / 昵称 / 商品')" size="small" style="width:220px" clearable><template #prefix><ui-icon name="search" :size="13"></ui-icon></template></el-input>
+            <span class="spacer"></span>
+            <span class="muted small">{{ $t('发货单模板') }}</span>
+            <el-select v-model="sm.templateId" size="small" style="width:200px">
+              <el-option v-for="t in s.templates" :key="t.id" :label="t.name" :value="t.id"></el-option>
+            </el-select>
+            <el-tooltip :content="$t('在模板设计里用「商品清单」「件数」「合计金额」组件做一个发货单模板')"><span class="muted"><ui-icon name="help" :size="14"></ui-icon></span></el-tooltip>
+          </div>
+          <div class="table-wrap">
+            <el-table :data="shownSummary" size="small" height="calc(100vh - 380px)" :empty-text="$t('这个范围内没有订单')">
+              <el-table-column :label="$t('编号')" width="80" sortable :sort-method="(a, b) => a.code - b.code"><template #default="{row}"><b class="mono big-code">{{ row.codeText }}</b></template></el-table-column>
+              <el-table-column :label="$t('客户')" min-width="170" show-overflow-tooltip>
+                <template #default="{row}">{{ row.nickname || row.uniqueId }}<span v-if="row.isNew" class="badge-new">{{ $t('新') }}</span><div class="muted small">@{{ row.uniqueId }}</div></template>
+              </el-table-column>
+              <el-table-column :label="$t('商品明细')" min-width="260">
+                <template #default="{row}">
+                  <div class="items"><span v-for="(it, k) in row.items" :key="k" class="item-chip">{{ it.label }}<b v-if="it.count > 1"> ×{{ it.count }}</b></span></div>
+                </template>
+              </el-table-column>
+              <el-table-column :label="$t('件数')" width="70" sortable :sort-method="(a, b) => a.qty - b.qty"><template #default="{row}"><span class="mono">{{ row.qty }}</span></template></el-table-column>
+              <el-table-column :label="$t('金额')" width="120" sortable :sort-method="(a, b) => a.total - b.total"><template #default="{row}"><b class="mono">{{ money(row.total) }}</b></template></el-table-column>
+              <el-table-column :label="$t('最后下单')" width="96"><template #default="{row}"><span class="mono muted">{{ hms(row.lastTime) }}</span></template></el-table-column>
+            </el-table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 订单备注（TikTok Shop） ================= -->
+      <div v-if="page === 'shop'" class="shop-grid">
+        <div class="panel shop-orders">
+          <div class="toolbar">
+            <el-button size="small" type="primary" :loading="sp.loading" :disabled="!sp.status.loggedIn" @click="loadShopOrders"><ui-icon name="refresh" :size="13"></ui-icon>&nbsp;{{ $t('读取待发货订单') }}</el-button>
+            <div class="seg shop-seg">
+              <button type="button" v-for="f in SHOP_FILTERS" :key="f.key" :class="{ on: sp.filter === f.key }" @click="sp.filter = f.key">{{ f.label }} {{ shopCount(f.key) }}</button>
+            </div>
+            <el-input v-model="sp.search" :placeholder="$t('搜索订单 / 用户')" size="small" style="width:140px" clearable></el-input>
+            <span class="spacer"></span>
+            <el-button v-if="sp.busy" size="small" type="danger" plain @click="api.invoke('shop:stop')">{{ $t('停止') }}</el-button>
+            <el-button v-if="sp.selected.length" size="small" :disabled="sp.busy" @click="noteBatch(true)">{{ $t('备注选中') }} {{ sp.selected.length }}</el-button>
+            <el-button size="small" type="primary" :loading="sp.busy" :disabled="!sp.orders.length" @click="noteBatch(false)"><ui-icon name="note" :size="13"></ui-icon>&nbsp;{{ $t('批量备注') }}</el-button>
+          </div>
+          <div class="table-wrap">
+            <el-table :data="shownShopOrders" size="small" height="calc(100vh - 196px)" row-key="id" :empty-text="sp.status.loggedIn ? $t('点「读取待发货订单」') : $t('先在右边登录店铺')" @selection-change="(r) => sp.selected = r">
+              <el-table-column type="selection" width="38"></el-table-column>
+              <el-table-column :label="$t('订单')" width="168">
+                <template #default="{row}">
+                  <div class="mono">{{ row.id }}</div>
+                  <div class="muted small mono">{{ fullTime(row.createTime).slice(5, 16) }} · {{ row.amountText }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column :label="$t('商品')" min-width="110">
+                <template #default="{row}">
+                  <div v-for="(it, i) in row.items.slice(0, 2)" :key="i" class="shop-item" :title="it.name">{{ it.sellerSku ? it.sellerSku + ' · ' : '' }}{{ it.name }}<span v-if="it.qty > 1" class="muted"> ×{{ it.qty }}</span></div>
+                  <div v-if="row.items.length > 2" class="muted small">{{ $t('等') }} {{ row.items.length }} {{ $t('件') }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column :label="$t('买家')" width="112"><template #default="{row}"><span class="mono">{{ row.buyer }}</span></template></el-table-column>
+              <el-table-column :label="$t('匹配扣号')" width="150">
+                <template #default="{row}">
+                  <template v-if="row.match === 'ok'">
+                    <div><b class="mono">{{ codeText(row.code) }}</b> {{ row.user }}</div>
+                    <div class="muted small" v-if="row.merged">{{ $t('合并') }} {{ row.merged }} {{ $t('单') }}</div>
+                  </template>
+                  <el-tooltip v-else-if="row.match === 'ambiguous'" :content="$t('对得上的用户：') + (row.candidates || []).join($t('、'))" placement="top"><el-tag size="small" type="warning">{{ $t('多人对得上') }}</el-tag></el-tooltip>
+                  <el-tag v-else-if="row.match === 'used'" size="small" type="info">{{ $t('扣号已用') }}</el-tag>
+                  <el-tag v-else size="small" type="info">{{ $t('未匹配') }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column :label="$t('备注')" min-width="150">
+                <template #default="{row}">
+                  <div v-if="row.noted" class="shop-note done" :title="row.noted"><span class="ok">✓</span> {{ row.noted }}</div>
+                  <div v-else-if="row.hasNote" class="muted small">{{ $t('已有备注（非本软件）') }}</div>
+                  <div v-if="row.note && row.note !== row.noted" class="shop-note plan" :title="$t('将写入：') + row.note">→ {{ row.note }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column :label="$t('操作')" width="76" fixed="right">
+                <template #default="{row}"><el-button link size="small" type="primary" :disabled="sp.busy" @click="openShopNote(row)">{{ $t('订单备注') }}</el-button></template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+
+        <div class="shop-side">
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><span class="ic"><ui-icon name="store"></ui-icon></span>{{ $t('店铺') }}</div>
+              <span class="spacer"></span>
+              <el-tag size="small" :type="sp.status.loggedIn ? 'success' : 'info'">{{ sp.status.loggedIn ? $t('已登录') : $t('未登录') }}</el-tag>
+            </div>
+            <div class="panel-body">
+              <div v-if="sp.status.loggedIn && sp.status.shop" class="shop-info">
+                <div class="shop-name">{{ sp.status.shop.name }}</div>
+                <div class="muted small mono">ID {{ sp.status.shop.id }} · {{ sp.status.shop.region }}</div>
+              </div>
+              <div v-else class="muted small">{{ $t('登录 TikTok Shop 卖家中心后，可以读取待发货订单、给订单写卖家备注。') }}</div>
+              <div class="row">
+                <el-button size="small" type="primary" @click="api.invoke('shop:login')">{{ sp.status.loggedIn ? $t('更换店铺') : $t('浏览器登录') }}</el-button>
+                <el-button size="small" @click="sp.cookieDialog = true">{{ $t('Cookie 登录') }}</el-button>
+                <el-button v-if="sp.status.loggedIn" size="small" text type="danger" @click="shopLogout">{{ $t('退出') }}</el-button>
+                <el-button v-else size="small" text :loading="sp.checking" @click="shopCheck">{{ $t('刷新') }}</el-button>
+              </div>
+              <el-form label-width="auto" size="small" class="tight-form">
+                <el-form-item :label="$t('卖家中心')"><el-input v-model="s.shop.host" placeholder="seller-vn.tiktok.com"></el-input></el-form-item>
+              </el-form>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title"><span class="ic"><ui-icon name="note"></ui-icon></span>{{ $t('备注模板') }}</div></div>
+            <div class="panel-body">
+              <el-input v-model="s.shop.template" size="small" :placeholder="$t('【{fixedno}】{accname}')" ref="shopTplInput"></el-input>
+              <div class="field-chips">
+                <button type="button" v-for="f in sp.fields" :key="f.key" class="field-chip" :title="'{' + f.key + '}'" @click="insertShopField(f.key)">{{ f.label }}</button>
+              </div>
+              <div class="hint">{{ $t('预览：') }}<b>{{ shopPreview || '—' }}</b></div>
+              <el-form label-width="auto" size="small" class="tight-form">
+                <el-form-item :label="$t('备注方式')">
+                  <el-radio-group v-model="s.shop.mode">
+                    <el-radio value="overwrite">{{ $t('完全覆盖') }}</el-radio>
+                    <el-radio value="append">{{ $t('追加') }}</el-radio>
+                  </el-radio-group>
+                </el-form-item>
+                <el-form-item :label="$t('合并订单')">
+                  <el-switch v-model="s.shop.merge"></el-switch>
+                  <span class="muted small ml8">{{ $t('同一买家的多张订单写同一条备注') }}</span>
+                </el-form-item>
+                <el-form-item :label="$t('向前回溯')">
+                  <el-input-number v-model="s.shop.backMin" :min="0" :max="1440" size="small" style="width:100px"></el-input-number>
+                  <span class="muted small ml8">{{ $t('分钟（先扣号后下单）') }}</span>
+                </el-form-item>
+                <el-form-item :label="$t('向后回溯')">
+                  <el-input-number v-model="s.shop.fwdMin" :min="0" :max="1440" size="small" style="width:100px"></el-input-number>
+                  <span class="muted small ml8">{{ $t('分钟（先下单后扣号）') }}</span>
+                </el-form-item>
+                <el-form-item :label="$t('流水策略')">
+                  <el-radio-group v-model="s.shop.serial">
+                    <el-radio value="all">{{ $t('全部') }}</el-radio>
+                    <el-radio value="min">{{ $t('最早') }}</el-radio>
+                    <el-radio value="max">{{ $t('最新') }}</el-radio>
+                  </el-radio-group>
+                  <el-checkbox v-model="s.shop.allowRepeat" size="small">{{ $t('同一条扣号可用于多张订单') }}</el-checkbox>
+                </el-form-item>
+                <el-form-item :label="$t('其他')">
+                  <el-checkbox v-model="s.shop.skipNoted" size="small">{{ $t('跳过已有别人备注的订单') }}</el-checkbox>
+                  <div class="row" style="gap:6px">
+                    <span class="muted small">{{ $t('请求间隔') }}</span>
+                    <el-input-number v-model="s.shop.pageDelay" :min="200" :max="10000" :step="100" size="small" style="width:110px"></el-input-number>
+                    <span class="muted small">{{ $t('毫秒') }}</span>
+                  </div>
+                </el-form-item>
+              </el-form>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><span class="ic"><ui-icon name="zap"></ui-icon></span>{{ $t('自动备注') }}</div>
+              <span class="spacer"></span>
+              <el-switch v-model="s.shop.auto" :disabled="!sp.status.loggedIn && !s.shop.auto"></el-switch>
+            </div>
+            <div class="panel-body">
+              <div class="row" style="gap:6px">
+                <span class="muted small">{{ $t('每') }}</span>
+                <el-input-number v-model="s.shop.autoSeconds" :min="20" :max="3600" :step="10" size="small" style="width:100px"></el-input-number>
+                <span class="muted small">{{ $t('秒读一次最近') }}</span>
+                <el-input-number v-model="s.shop.autoHours" :min="1" :max="168" size="small" style="width:86px"></el-input-number>
+                <span class="muted small">{{ $t('小时的新订单') }}</span>
+              </div>
+              <div class="hint">{{ $t('只给匹配上、还没写过的订单写备注；对不上或多人对得上的订单不写，可以在列表里手动「订单备注」。') }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 商品信息 ================= -->
+      <div v-if="page === 'products'" class="page-grid">
+        <div class="panel">
+          <div class="panel-body" style="padding-top:14px">
+            <div class="row">
+              <el-switch v-model="s.products.enabled"></el-switch><b>{{ $t('启用商品匹配') }}</b>
+              <span class="muted small">{{ $t('弹幕号码 = 商品编号时，把商品名称、价格、规格印到标签上，并扣减库存') }}</span>
+            </div>
+            <div class="row" v-if="s.products.enabled">
+              <el-checkbox v-model="s.products.requireMatch" size="small">{{ $t('只打印有对应商品的号码') }}</el-checkbox>
+              <el-checkbox v-model="s.products.blockOutOfStock" size="small">{{ $t('库存为 0 时不再打印（售罄）') }}</el-checkbox>
+            </div>
+            <div class="row">
+              <el-checkbox v-model="s.products.numberAsPrice" size="small">{{ $t('没有对应商品时按号码计价：金额 = 号码 ×') }}</el-checkbox>
+              <el-input-number v-model="s.products.multiplier" :min="1" :step="1000" size="small" style="width:130px" :disabled="!s.products.numberAsPrice"></el-input-number>
+              <span class="muted small">{{ $t('（如号码 150 × 1000 = 150.000，用于统计销售额和发货汇总）') }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="toolbar">
+            <el-input v-model="pd.search" :placeholder="$t('搜索编号 / 名称')" size="small" style="width:200px" clearable><template #prefix><ui-icon name="search" :size="13"></ui-icon></template></el-input>
+            <el-button size="small" type="primary" @click="editProduct()"><ui-icon name="plus" :size="13"></ui-icon>&nbsp;{{ $t('新增商品') }}</el-button>
+            <el-button size="small" @click="importProducts"><ui-icon name="upload" :size="13"></ui-icon>&nbsp;{{ $t('导入') }}</el-button>
+            <el-button size="small" @click="api.invoke('products:export')"><ui-icon name="download" :size="13"></ui-icon>&nbsp;{{ $t('导出') }}</el-button>
+            <el-button size="small" type="danger" plain :disabled="!pd.selected.length" @click="deleteProducts(pd.selected)">{{ $t('批量删除') }}</el-button>
+            <span class="spacer"></span>
+            <span class="count-tag">{{ $t('共') }} <b>{{ shownProducts.length }}</b> {{ $t('个 · 已售') }} <b>{{ productSold }}</b> {{ $t('件') }}</span>
+          </div>
+          <div class="table-wrap">
+            <el-table :data="shownProducts" size="small" height="calc(100vh - 290px)" :empty-text="$t('还没有商品，点「新增商品」或导入 CSV')" @selection-change="(r) => pd.selected = r">
+              <el-table-column type="selection" width="40"></el-table-column>
+              <el-table-column :label="$t('编号')" width="90" sortable :sort-method="(a, b) => Number(a.code) - Number(b.code)"><template #default="{row}"><b class="mono">{{ row.code }}</b></template></el-table-column>
+              <el-table-column prop="name" :label="$t('商品名称')" min-width="180" show-overflow-tooltip></el-table-column>
+              <el-table-column :label="$t('价格')" width="120" sortable :sort-method="(a, b) => (a.price || 0) - (b.price || 0)"><template #default="{row}"><span class="mono">{{ row.price != null ? money(row.price) : '—' }}</span></template></el-table-column>
+              <el-table-column :label="$t('库存')" width="110">
+                <template #default="{row}">
+                  <span v-if="row.stock == null" class="muted">{{ $t('不限') }}</span>
+                  <el-tag v-else-if="row.stock <= 0" type="danger" size="small">{{ $t('售罄') }}</el-tag>
+                  <span v-else class="mono" :class="row.stock <= 3 ? 'warn' : ''">{{ row.stock }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="spec" :label="$t('规格')" width="120" show-overflow-tooltip></el-table-column>
+              <el-table-column :label="$t('已售')" width="80"><template #default="{row}"><span class="mono">{{ row.sold || 0 }}</span></template></el-table-column>
+              <el-table-column :label="$t('操作')" width="104" fixed="right">
+                <template #default="{row}">
+                  <el-button link size="small" type="primary" @click="editProduct(row)">{{ $t('编辑') }}</el-button>
+                  <el-button link size="small" type="danger" @click="deleteProducts([row])">{{ $t('删除') }}</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 名单管理 ================= -->
+      <div v-if="page === 'names'" class="page-grid">
+        <div class="panel">
+          <div class="panel-body" style="padding-top:14px">
+            <div class="row">
+              <span>{{ $t('名单模式') }}</span>
+              <div class="seg" style="width:280px">
+                <button type="button" :class="{ on: s.listMode === 'blacklist' }" @click="s.listMode = 'blacklist'">{{ $t('黑名单生效') }}</button>
+                <button type="button" :class="{ on: s.listMode === 'whitelist' }" @click="s.listMode = 'whitelist'">{{ $t('白名单生效') }}</button>
+              </div>
+              <span class="muted small">{{ s.listMode === 'blacklist' ? $t('黑名单里的用户不打印，其他人正常打印。') : $t('只打印白名单里的用户（如只给老客户/会员下单）。') }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="toolbar">
+            <div class="seg" style="width:200px">
+              <button type="button" :class="{ on: nl.kind === 'blacklist' }" @click="switchNames('blacklist')">{{ $t('黑名单') }}</button>
+              <button type="button" :class="{ on: nl.kind === 'whitelist' }" @click="switchNames('whitelist')">{{ $t('白名单') }}</button>
+            </div>
+            <el-input v-model="nl.uniqueId" :placeholder="$t('用户名（@后面的）')" size="small" style="width:170px"></el-input>
+            <el-input v-model="nl.nickname" :placeholder="$t('昵称')" size="small" style="width:130px"></el-input>
+            <el-input v-model="nl.note" :placeholder="$t('备注')" size="small" style="width:150px"></el-input>
+            <el-button size="small" type="primary" @click="addName"><ui-icon name="plus" :size="13"></ui-icon>&nbsp;{{ $t('添加') }}</el-button>
+            <el-button size="small" @click="importNames"><ui-icon name="upload" :size="13"></ui-icon>&nbsp;{{ $t('导入') }}</el-button>
+            <el-button size="small" @click="api.invoke('names:export', nl.kind)"><ui-icon name="download" :size="13"></ui-icon>&nbsp;{{ $t('导出') }}</el-button>
+            <span class="spacer"></span>
+            <el-input v-model="nl.search" :placeholder="$t('搜索')" size="small" style="width:150px" clearable></el-input>
+            <span class="count-tag">{{ $t('共') }} <b>{{ shownNames.length }}</b> {{ $t('人') }}</span>
+          </div>
+          <div class="table-wrap">
+            <el-table :data="shownNames" height="calc(100vh - 270px)" size="small" :empty-text="$t('暂无数据')">
+              <el-table-column :label="$t('添加时间')" width="160"><template #default="{row}"><span class="mono muted">{{ fullTime(row.addedAt) }}</span></template></el-table-column>
+              <el-table-column prop="uniqueId" :label="$t('用户名')" width="190"></el-table-column>
+              <el-table-column prop="nickname" :label="$t('昵称')" min-width="160" show-overflow-tooltip></el-table-column>
+              <el-table-column prop="note" :label="$t('备注')" min-width="160" show-overflow-tooltip></el-table-column>
+              <el-table-column :label="$t('操作')" width="104" fixed="right">
+                <template #default="{row}">
+                  <el-button link size="small" type="primary" @click="noteName(row)">{{ $t('备注') }}</el-button>
+                  <el-button link size="small" type="danger" @click="removeName(row)">{{ $t('移除') }}</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 客户编号 ================= -->
+      <div v-if="page === 'customers'" class="panel">
+        <div class="toolbar">
+          <el-input v-model="cs.search" :placeholder="$t('用户名 / 昵称 / 编号')" size="small" style="width:220px" clearable><template #prefix><ui-icon name="search" :size="13"></ui-icon></template></el-input>
+          <el-button size="small" type="danger" plain :disabled="!cs.selected.length" @click="deleteCustomers">{{ $t('批量删除') }}</el-button>
+          <span class="spacer"></span>
+          <el-button size="small" @click="importCustomers"><ui-icon name="upload" :size="13"></ui-icon>&nbsp;{{ $t('导入') }}</el-button>
+          <el-button size="small" @click="api.invoke('customers:export')"><ui-icon name="download" :size="13"></ui-icon>&nbsp;{{ $t('导出') }}</el-button>
+          <el-button size="small" type="danger" plain @click="resetCustomers">{{ $t('清空归零') }}</el-button>
+          <span class="count-tag">{{ $t('共') }} <b>{{ shownCustomers.length }}</b> {{ $t('位客户') }}</span>
+        </div>
+        <div class="table-wrap">
+          <el-table :data="shownCustomers" height="calc(100vh - 190px)" size="small" :empty-text="$t('暂无数据')" @selection-change="(r) => cs.selected = r">
+            <el-table-column type="selection" width="40"></el-table-column>
+            <el-table-column :label="$t('编号')" width="100" sortable :sort-method="(a, b) => a.code - b.code"><template #default="{row}"><b class="mono">{{ codeText(row.code) }}</b></template></el-table-column>
+            <el-table-column prop="uniqueId" :label="$t('用户名')" width="200"></el-table-column>
+            <el-table-column prop="nickname" :label="$t('昵称')" min-width="180" show-overflow-tooltip></el-table-column>
+            <el-table-column :label="$t('首次下单')" width="170"><template #default="{row}"><span class="mono muted">{{ fullTime(row.addedAt) }}</span></template></el-table-column>
+            <el-table-column :label="$t('操作')" width="100">
+              <template #default="{row}"><el-button link size="small" type="primary" @click="editCustomerCode(row)">{{ $t('改编号') }}</el-button></template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </div>
+
+      <!-- ================= 数据统计 ================= -->
+      <div v-if="page === 'stats'" class="page-grid">
+        <div class="row">
+          <div class="seg range-seg">
+            <button type="button" v-for="r in RANGES" :key="r.key" :class="{ on: st.range === r.key }" @click="setRange(r.key)">{{ r.label }}</button>
+          </div>
+          <el-date-picker v-if="st.range === 'custom'" v-model="st.custom" type="datetimerange" size="small" style="width:320px" @change="loadStats"></el-date-picker>
+          <span class="spacer"></span>
+          <el-button size="small" @click="loadStats"><ui-icon name="refresh" :size="13"></ui-icon>&nbsp;{{ $t('刷新') }}</el-button>
+        </div>
+        <div class="kpis five">
+          <div class="panel kpi"><div class="k-label">{{ $t('订单数') }}</div><div class="k-value">{{ st.data.orders }}</div></div>
+          <div class="panel kpi"><div class="k-label">{{ $t('买家数') }}</div><div class="k-value">{{ st.data.buyers }}</div></div>
+          <div class="panel kpi"><div class="k-label">{{ $t('新客户') }}</div><div class="k-value">{{ st.data.newBuyers }}</div><div class="k-sub">{{ st.data.buyers ? Math.round(st.data.newBuyers / st.data.buyers * 100) : 0 }}{{ $t('% 的买家') }}</div></div>
+          <div class="panel kpi"><div class="k-label">{{ $t('销售额') }}</div><div class="k-value">{{ money(st.data.amount) }}</div><div class="k-sub">{{ $t('客单价') }} {{ st.data.buyers ? money(Math.round(st.data.amount / st.data.buyers)) : 0 }}</div></div>
+          <div class="panel kpi"><div class="k-label">{{ $t('打印失败') }}</div><div class="k-value" :class="st.data.failed ? 'danger' : ''">{{ st.data.failed }}</div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">{{ $t('每小时订单数') }}</div><span class="spacer"></span><span class="muted small">{{ $t('按下单时间（0–23 点）汇总') }}</span></div>
+          <div class="chart-wrap" ref="chartWrap" @mouseleave="tip.show = false">
+            <svg class="chart-svg" :viewBox="'0 0 ' + chart.w + ' ' + chart.h" preserveAspectRatio="none" ref="chartSvg">
+              <g v-for="t in chart.ticks" :key="'t' + t.v">
+                <line class="grid" :x1="chart.pl" :x2="chart.w - chart.pr" :y1="t.y" :y2="t.y"></line>
+                <text class="axis-text" :x="chart.pl - 8" :y="t.y + 4" text-anchor="end">{{ t.v }}</text>
+              </g>
+              <g v-for="b in chart.bars" :key="'b' + b.h">
+                <path class="bar" :class="{ dim: tip.show && tip.h !== b.h }" :d="b.d"></path>
+                <rect class="hit" :x="b.x - b.gap / 2" :y="chart.pt" :width="b.bw + b.gap" :height="chart.h - chart.pt - chart.pb" @mousemove="showTip(b, $event)"></rect>
+                <text v-if="b.h % 3 === 0" class="axis-text" :x="b.x + b.bw / 2" :y="chart.h - 6" text-anchor="middle">{{ b.h }}{{ $t('时') }}</text>
+              </g>
+            </svg>
+            <div v-if="tip.show" class="chart-tip" :style="{ left: tip.x + 'px', top: tip.y + 'px' }">{{ tip.h }}:00–{{ tip.h }}{{ $t(':59') }}　<b>{{ tip.v }}</b> {{ $t('单') }}</div>
+          </div>
+        </div>
+        <div class="settings-grid">
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">{{ $t('买家排行') }}</div></div>
+            <div class="table-wrap">
+              <el-table :data="st.data.topBuyers" size="small" :empty-text="$t('暂无数据')">
+                <el-table-column type="index" label="#" width="44"></el-table-column>
+                <el-table-column :label="$t('买家')" min-width="150" show-overflow-tooltip><template #default="{row}">{{ row.nickname || row.uniqueId }} <span class="muted small">{{ row.codeText }}</span></template></el-table-column>
+                <el-table-column :label="$t('订单')" min-width="150">
+                  <template #default="{row}"><div class="rank-cell"><span class="num">{{ row.count }}</span><div class="rank-bar" :style="{ width: (row.count / maxBuyer * 100) + '%' }"></div></div></template>
+                </el-table-column>
+                <el-table-column :label="$t('金额')" width="110"><template #default="{row}"><span class="mono">{{ money(row.amount) }}</span></template></el-table-column>
+              </el-table>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">{{ $t('热门号码 / 商品') }}</div></div>
+            <div class="table-wrap">
+              <el-table :data="st.data.topNumbers" size="small" :empty-text="$t('暂无数据')">
+                <el-table-column type="index" label="#" width="44"></el-table-column>
+                <el-table-column prop="key" :label="$t('号码 / 商品')" min-width="150" show-overflow-tooltip></el-table-column>
+                <el-table-column :label="$t('订单')" min-width="160">
+                  <template #default="{row}"><div class="rank-cell"><span class="num">{{ row.count }}</span><div class="rank-bar" :style="{ width: (row.count / maxNumber * 100) + '%' }"></div></div></template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 系统设置 ================= -->
+      <div v-if="page === 'settings'" class="settings-grid">
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title"><span class="ic"><ui-icon name="globe"></ui-icon></span>{{ $t('语言与地区') }} · Language</div></div>
+          <div class="panel-body">
+            <el-form label-width="120px" size="small">
+              <el-form-item :label="$t('界面语言')">
+                <el-select v-model="uiLang" style="width:220px" @change="changeLang">
+                  <el-option v-for="l in LANGS" :key="l.code" :label="l.label" :value="l.code"></el-option>
+                </el-select>
+                <div class="hint">{{ $t('切换后界面会刷新一下，正在进行的直播连接和打印不受影响。') }}</div>
+              </el-form-item>
+              <el-form-item :label="$t('国家 / 站点')">
+                <el-select :model-value="s.country" style="width:220px" @change="applyCountry">
+                  <el-option v-for="c in COUNTRIES" :key="c.code" :label="c.name + ' · ' + c.code" :value="c.code"></el-option>
+                </el-select>
+                <div class="hint">{{ $t('决定金额格式（{0}）、TikTok Shop 卖家中心（{1}）和默认的取消关键词。', money(1234567), s.shop?.host || '') }}</div>
+              </el-form-item>
+            </el-form>
+          </div>
+        </div>
+
+        <div class="panel selfcheck">
+          <div class="panel-head">
+            <div class="panel-title"><span class="ic"><ui-icon name="shield"></ui-icon></span>{{ $t('环境自检') }}</div>
+            <span class="muted small" v-if="check.at">{{ hms(check.at) }} {{ $t('检查') }}</span>
+            <span class="spacer"></span>
+            <el-button size="small" type="primary" :loading="check.running" @click="runSelfCheck">{{ check.items.length ? $t('重新检查') : $t('开始检查') }}</el-button>
+          </div>
+          <div class="panel-body">
+            <div v-if="!check.items.length" class="muted small">{{ $t('开播前点一下：检查打印机、模板、网络、签名服务、TikTok 登录、共享主机和监控规则。') }}</div>
+            <div v-for="it in check.items" :key="it.name" class="check-row">
+              <span class="check-dot" :class="it.ok ? 'ok' : 'bad'">{{ it.ok ? '✓' : '!' }}</span>
+              <span class="check-name">{{ it.name }}</span>
+              <span class="check-detail" :class="it.ok ? 'muted' : 'warn'">{{ it.detail }}</span>
+              <div v-if="!it.ok && it.tip" class="check-tip">{{ it.tip }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title"><span class="ic"><ui-icon name="link"></ui-icon></span>{{ $t('直播连接') }}</div></div>
+          <div class="panel-body">
+            <el-form label-width="120px" size="small">
+              <el-form-item :label="$t('连接方式')">
+                <el-radio-group v-model="s.browserMode">
+                  <el-radio :value="false">{{ $t('第三方模式') }}</el-radio>
+                  <el-radio :value="true">{{ $t('浏览器模式') }}</el-radio>
+                </el-radio-group>
+                <div class="hint">{{ $t('第三方模式通过签名服务直连，不用开浏览器。浏览器模式打开内置浏览器窗口（可登录 TikTok），第三方失效时用。') }}</div>
+              </el-form-item>
+              <el-form-item label="Euler API Key">
+                <el-input v-model="s.signApiKey" type="password" show-password :placeholder="$t('可选，连接频繁失败时填写')"></el-input>
+              </el-form-item>
+              <el-form-item :label="$t('断线自动重连')"><el-switch v-model="s.autoReconnect"></el-switch></el-form-item>
+              <el-form-item :label="$t('关闭窗口时')">
+                <el-radio-group v-model="s.closeToTray">
+                  <el-radio :value="true">{{ $t('最小化到托盘（继续收单打印）') }}</el-radio>
+                  <el-radio :value="false">{{ $t('直接退出程序') }}</el-radio>
+                </el-radio-group>
+                <div class="hint">{{ $t('托盘在任务栏右下角：单击打开窗口，右键可暂停打印、开大屏或退出。') }}</div>
+              </el-form-item>
+              <el-form-item :label="$t('退出程序')">
+                <el-button size="small" type="danger" plain @click="api.invoke('app:quit')">{{ $t('退出 LiveNumber') }}</el-button>
+              </el-form-item>
+            </el-form>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title"><span class="ic"><ui-icon name="bell"></ui-icon></span>{{ $t('命中提醒') }}</div></div>
+          <div class="panel-body">
+            <el-form label-width="120px" size="small">
+              <el-form-item :label="$t('提示音')"><el-switch v-model="s.notify.sound"></el-switch><el-button text size="small" class="ml8" @click="playChime()">{{ $t('试听') }}</el-button></el-form-item>
+              <el-form-item :label="$t('语音播报')"><el-switch v-model="s.notify.voice"></el-switch><el-button text size="small" class="ml8" @click="speakHit(demoHit)">{{ $t('试听') }}</el-button></el-form-item>
+              <el-form-item :label="$t('播报内容')">
+                <el-input v-model="s.notify.voiceText" :disabled="!s.notify.voice"></el-input>
+                <div class="hint">{{ $t('可用：{code} 编号、{nickname} 昵称、{content} 弹幕、{product} 商品名') }}</div>
+              </el-form-item>
+              <el-form-item :label="$t('重复下单')">
+                <el-select v-model="s.dedupe.mode" style="width:220px">
+                  <el-option :label="$t('N 秒内重复发只算一单（防刷屏）')" value="window"></el-option>
+                  <el-option :label="$t('同一场同一号码只算一单')" value="session"></el-option>
+                  <el-option :label="$t('每条都算（同一人可以买多件）')" value="none"></el-option>
+                </el-select>
+                <el-input-number v-if="s.dedupe.mode === 'window'" v-model="s.dedupe.seconds" :min="5" :max="3600" class="ml8" style="width:110px"></el-input-number>
+                <span v-if="s.dedupe.mode === 'window'" class="muted ml8">{{ $t('秒') }}</span>
+                <div class="hint">{{ $t('指同一个人重复发同一个号码。不同的人抢同一个号码由「扣号模式」控制。') }}</div>
+              </el-form-item>
+              <el-form-item :label="$t('弹幕取消订单')">
+                <el-switch v-model="s.cancel.enabled"></el-switch>
+                <div class="hint">{{ $t('买家发「hủy」取消自己最近一单，发「hủy 15」取消 15 号；库存会退回，抢单名额让给别人。') }}</div>
+              </el-form-item>
+              <el-form-item :label="$t('取消关键词')" v-if="s.cancel.enabled">
+                <el-input v-model="s.cancel.keywords" :placeholder="$t('逗号分隔')"></el-input>
+              </el-form-item>
+              <el-form-item :label="$t('可取消时限')" v-if="s.cancel.enabled">
+                <el-input-number v-model="s.cancel.minutes" :min="1" :max="1440"></el-input-number><span class="muted ml8">{{ $t('分钟内的订单') }}</span>
+              </el-form-item>
+              <el-form-item :label="$t('新场次')">
+                <el-checkbox v-model="s.session.resetSerial">{{ $t('开始新场次时流水号归零') }}</el-checkbox>
+              </el-form-item>
+              <el-form-item :label="$t('新人标识')">
+                <el-input v-model="s.newbieMark" style="width:100px"></el-input>
+                <div class="hint">{{ $t('第一次下单的客户，标签上的「新人」组件显示这个文字（需在模板里加「新人」组件）。') }}</div>
+              </el-form-item>
+            </el-form>
+          </div>
+        </div>
+
+        <div class="panel screen-panel">
+          <div class="panel-head">
+            <div class="panel-title"><span class="ic"><ui-icon name="monitor"></ui-icon></span>{{ $t('悬浮大屏') }}</div>
+            <span class="spacer"></span>
+            <el-button size="small" :type="screenOpen ? 'default' : 'primary'" @click="toggleScreen">{{ screenOpen ? $t('关闭大屏') : $t('打开大屏') }}</el-button>
+          </div>
+          <div class="panel-body">
+            <el-form label-width="96px" size="small">
+              <el-form-item :label="$t('风格')">
+                <div class="seg" style="width:100%">
+                  <button type="button" :class="{ on: s.screen.style === 'dark' }" @click="s.screen.style = 'dark'">{{ $t('深色玻璃') }}</button>
+                  <button type="button" :class="{ on: s.screen.style === 'green' }" @click="s.screen.style = 'green'">{{ $t('绿幕') }}</button>
+                  <button type="button" :class="{ on: s.screen.style === 'transparent' }" @click="s.screen.style = 'transparent'">{{ $t('透明') }}</button>
+                </div>
+                <div class="hint">{{ $t('绿幕：在直播软件里用「色度键」抠掉绿色；透明：直接叠在桌面或 OBS 上。') }}</div>
+              </el-form-item>
+              <el-form-item :label="$t('标题')"><el-input v-model="s.screen.title" maxlength="20"></el-input></el-form-item>
+              <el-form-item :label="$t('空闲提示')"><el-input v-model="s.screen.hint" maxlength="30"></el-input></el-form-item>
+              <el-form-item :label="$t('字体大小')"><el-slider v-model="s.screen.scale" :min="0.7" :max="1.8" :step="0.05" :format-tooltip="v => Math.round(v * 100) + '%'" style="width:220px"></el-slider></el-form-item>
+              <el-form-item :label="$t('窗口透明度')"><el-slider v-model="s.screen.opacity" :min="0.3" :max="1" :step="0.05" :format-tooltip="v => Math.round(v * 100) + '%'" style="width:220px"></el-slider></el-form-item>
+              <el-form-item :label="$t('显示')">
+                <el-checkbox v-model="s.screen.alwaysOnTop">{{ $t('窗口置顶') }}</el-checkbox>
+                <el-checkbox v-model="s.screen.maskNames">{{ $t('昵称打码') }}</el-checkbox>
+                <el-checkbox v-model="s.screen.showHits">{{ $t('最新下单') }}</el-checkbox>
+                <el-checkbox v-model="s.screen.showToday">{{ $t('今日单数') }}</el-checkbox>
+              </el-form-item>
+              <el-form-item :label="$t('下单条数')" v-if="s.screen.showHits"><el-input-number v-model="s.screen.hitsCount" :min="1" :max="10"></el-input-number></el-form-item>
+              <el-divider content-position="left">{{ $t('OBS / 直播伴侣') }}</el-divider>
+              <el-form-item :label="$t('浏览器源')">
+                <el-switch v-model="s.screen.obsEnabled" @change="applyObs"></el-switch>
+                <el-input-number v-model="s.screen.obsPort" :min="1024" :max="65535" controls-position="right" class="ml8" style="width:110px" @change="applyObs"></el-input-number>
+              </el-form-item>
+              <el-form-item v-if="obsUrl" :label="$t('地址')">
+                <span class="mono">{{ obsUrl }}</span>
+                <el-button text size="small" @click="copyText(obsUrl)"><ui-icon name="copy" :size="13"></ui-icon>&nbsp;{{ $t('复制') }}</el-button>
+                <div class="hint">{{ $t('在 OBS 或 TikTok 直播伴侣里添加「浏览器源」，URL 填这个地址，宽 420、高 640；风格选「透明」即可直接叠在画面上。') }}</div>
+              </el-form-item>
+            </el-form>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title"><span class="ic"><ui-icon name="printer"></ui-icon></span>{{ $t('打印') }}</div></div>
+          <div class="panel-body">
+            <el-form label-width="120px" size="small">
+              <el-form-item :label="$t('每张打印份数')"><el-input-number v-model="s.print.copies" :min="1" :max="5"></el-input-number></el-form-item>
+              <el-form-item :label="$t('失败自动重试')"><el-input-number v-model="s.print.retry" :min="0" :max="5"></el-input-number><span class="muted ml8">{{ $t('次') }}</span></el-form-item>
+              <el-form-item :label="$t('历史保留')"><el-input-number v-model="s.historyDays" :min="1" :max="365"></el-input-number><span class="muted ml8">{{ $t('天') }}</span></el-form-item>
+            </el-form>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title"><span class="ic"><ui-icon name="share"></ui-icon></span>{{ $t('共享编号主机') }}</div></div>
+          <div class="panel-body">
+            <el-form label-width="120px" size="small">
+              <el-form-item :label="$t('本机作为主机')">
+                <el-switch v-model="s.share.hostEnabled" @change="applyShare"></el-switch>
+                <span class="pill ml8" :class="shareRunning ? 'connected' : ''"><span class="dot"></span>{{ shareRunning ? $t('运行中') : $t('未开启') }}</span>
+              </el-form-item>
+              <el-form-item :label="$t('端口')"><el-input-number v-model="s.share.port" :min="1024" :max="65535" controls-position="right" @change="applyShare"></el-input-number></el-form-item>
+              <el-form-item :label="$t('共享密码')"><el-input v-model="s.share.key" :placeholder="$t('开启主机时自动生成')" @change="applyShare"></el-input></el-form-item>
+              <el-form-item v-if="s.share.hostEnabled" :label="$t('其他电脑填写')">
+                <div class="mono small">{{ lanUrls.join($t('  或  ')) }}</div>
+                <div class="hint">{{ $t('其他电脑「编号生成」选「共享」并填这个地址。首次开启时 Windows 防火墙会询问，请允许专用网络访问。') }}</div>
+              </el-form-item>
+            </el-form>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title"><span class="ic"><ui-icon name="database"></ui-icon></span>{{ $t('数据') }}</div></div>
+          <div class="panel-body">
+            <div class="row">
+              <el-button size="small" @click="backup"><ui-icon name="download" :size="13"></ui-icon>&nbsp;{{ $t('备份全部数据') }}</el-button>
+              <el-button size="small" type="warning" plain @click="restore"><ui-icon name="upload" :size="13"></ui-icon>&nbsp;{{ $t('从备份恢复') }}</el-button>
+            </div>
+            <div class="hint">{{ $t('备份包含设置、模板、打印历史、客户编号、商品和名单。恢复会覆盖当前数据并重启程序。') }}</div>
+            <div class="row">
+              <el-button size="small" @click="api.invoke('logs:open')"><ui-icon name="terminal" :size="13"></ui-icon>&nbsp;{{ $t('打开运行日志') }}</el-button>
+              <span class="muted small">{{ $t('每天一个文件，保留 14 天；「为什么这单没打印」可以在这里查') }}</span>
+            </div>
+            <div class="hint">{{ $t('数据目录：') }}<span class="mono">{{ userData }}</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 商品编辑 -->
+    <el-dialog v-model="sp.cookieDialog" :title="$t('Cookie 登录店铺')" width="560px" append-to-body>
+    <div class="muted small" style="margin-bottom:8px;line-height:1.7">
+      {{ $t('在已登录卖家中心的 Chrome 里，用 Cookie-Editor 等插件「导出 → JSON」，粘贴到下面。也支持') }} <span class="mono">a=1; b=2</span> {{ $t('格式。') }}<br>
+      {{ $t('Cookie 等于店铺登录凭证，只会保存在本机，不要发给别人。') }}
+    </div>
+    <el-input v-model="sp.cookieText" type="textarea" :rows="10" placeholder='[{"name":"sessionid","value":"...","domain":".tiktok.com", ...}]'></el-input>
+    <template #footer>
+      <el-button @click="sp.cookieDialog = false">{{ $t('取消') }}</el-button>
+      <el-button type="primary" :loading="sp.cookieLoading" @click="shopCookie">{{ $t('导入 Cookie') }}</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="sp.noteDialog" :title="$t('订单备注')" width="480px" append-to-body>
+    <template v-if="sp.noteRow">
+      <div class="muted small" style="margin-bottom:6px">{{ $t('订单') }} <span class="mono">{{ sp.noteRow.id }}</span> {{ $t('· 买家') }} <span class="mono">{{ sp.noteRow.buyer }}</span></div>
+      <div class="muted small" style="margin-bottom:8px">{{ $t('卖家中心现有备注：') }}<span v-if="sp.noteLoading">{{ $t('读取中…') }}</span><b v-else>{{ sp.noteOld || $t('（无）') }}</b></div>
+      <el-input v-model="sp.noteText" type="textarea" :rows="3" maxlength="500" show-word-limit :placeholder="$t('备注内容')"></el-input>
+    </template>
+    <template #footer>
+      <el-button @click="sp.noteDialog = false">{{ $t('取消') }}</el-button>
+      <el-button type="primary" :loading="sp.noteSaving" @click="saveShopNote">{{ $t('保存备注') }}</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="pd.dialog" :title="pd.form.originalCode ? $t('编辑商品') : $t('新增商品')" width="460px">
+    <el-form label-width="80px" size="default">
+      <el-form-item :label="$t('商品编号')"><el-input v-model="pd.form.code" :placeholder="$t('和弹幕号码对应，如 15')"></el-input></el-form-item>
+      <el-form-item :label="$t('商品名称')"><el-input v-model="pd.form.name"></el-input></el-form-item>
+      <el-form-item :label="$t('价格')"><el-input-number v-model="pd.form.price" :min="0" :step="1000" style="width:200px"></el-input-number></el-form-item>
+      <el-form-item :label="$t('库存')"><el-input-number v-model="pd.form.stock" :min="0" style="width:200px" :placeholder="$t('不填 = 不限')"></el-input-number></el-form-item>
+      <el-form-item :label="$t('规格')"><el-input v-model="pd.form.spec" :placeholder="$t('如 L / 红色')"></el-input></el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="pd.dialog = false">{{ $t('取消') }}</el-button>
+      <el-button type="primary" @click="saveProduct">{{ $t('保存') }}</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 模板设计器 -->
+  <el-dialog v-model="showDesigner" fullscreen class="designer-dialog" :close-on-press-escape="false" :show-close="false">
+    <template #header>
+      <div class="designer-head">
+        <span class="designer-title">{{ $t('打印模板设计') }}</span>
+        <span class="muted small">{{ $t('修改自动保存') }}</span>
+        <el-button size="small" type="primary" class="designer-done" @click="showDesigner = false">{{ $t('完成，返回') }}</el-button>
+      </div>
+    </template>
+    <label-designer v-if="showDesigner" :s="s" @test-print="testPrint"></label-designer>
+  </el-dialog>
+</div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

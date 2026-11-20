@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- 16–32px 用：线条更粗、留白更少 -->
+  <defs>
+    <linearGradient id="ln-bg-s" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2dd4bf"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="496" height="496" rx="104" fill="url(#ln-bg-s)"/>
+  <path d="M150 92H362a62 62 0 0 1 62 62V304a62 62 0 0 1-62 62H254L156 440V366h-6a62 62 0 0 1-62-62V154a62 62 0 0 1 62-62z" fill="#ffffff"/>
+  <g stroke="#0b1424" stroke-width="50" stroke-linecap="round">
+    <path d="M226 146 206 312"/>
+    <path d="M314 146 294 312"/>
+    <path d="M164 202H354"/>
+    <path d="M156 262H346"/>
+  </g>
+  <circle cx="420" cy="104" r="54" fill="#ef4444" stroke="#19b594" stroke-width="22"/>
+</svg>

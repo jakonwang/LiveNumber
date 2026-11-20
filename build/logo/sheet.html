@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;background:#e9edf3;font-family:Inter,"Microsoft YaHei",sans-serif;color:#0f172a}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;padding:22px 22px 40px}
+.col{background:#fff;border-radius:16px;padding:16px;box-shadow:0 4px 18px rgba(15,23,42,.08)}
+h2{margin:0 0 4px;font-size:20px} p{margin:0 0 12px;color:#64748b;font-size:13px;line-height:1.5;min-height:40px}
+.big{display:flex;gap:10px}
+.big div{flex:1;border-radius:12px;display:grid;place-items:center;padding:14px}
+.dark{background:#060b16}.light{background:#f8fafc;border:1px solid #e2e8f0}
+.big img{width:128px;height:128px}
+.sizes{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding:10px 14px;border-radius:10px}
+.sizes span{font-size:11px;color:#94a3b8;margin-right:4px}
+.task{display:flex;gap:6px;align-items:center;background:#1f2937;padding:6px 10px;border-radius:8px}
+.lock{display:flex;align-items:center;gap:12px;margin-top:12px;padding:14px;border-radius:12px;background:#060b16;color:#f8fafc}
+.lock img{width:52px;height:52px}
+.lock b{font-size:22px;letter-spacing:.2px;display:block}
+.lock small{color:#94a3b8;font-size:12px}
+</style></head><body><div class="grid">
+<script>
+const items=[
+ ['a-bubble.svg','A · 评论气泡','评论里发号码 → 下单。气泡 + # 号 + 红色直播点。'],
+ ['b-tag.svg','B · 价签','商品标签造型，# 号码，深色底更沉稳。'],
+ ['c-signal.svg','C · 直播信号','号码圆牌 + 两侧直播信号波，强调「直播」。'],
+ ['d-ticket.svg','D · 打印小票','打印出来的标签（撕纸边）+ 大号编号，强调「打单」。'],
+];
+for(const [f,t,d] of items){document.write(`<div class="col"><h2>${t}</h2><p>${d}</p>
+<div class="big"><div class="dark"><img src="${f}"></div><div class="light"><img src="${f}"></div></div>
+<div class="sizes light"><span>小尺寸</span><img src="${f}" width="64"><img src="${f}" width="32"><img src="${f}" width="24"><img src="${f}" width="16">
+<div class="task"><img src="${f}" width="24"><img src="${f}" width="16"></div></div>
+<div class="lock"><img src="${f}"><div><b>LiveNumber</b><small>直播扣号打单</small></div></div></div>`)}
+</script></div></body></html>

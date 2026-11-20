@@ -1,0 +1,97 @@
+'use strict';
+const assert = require('node:assert');
+const { maskMatch, renderNote, planNotes, combineNote } = require('../src/shopnote');
+
+let n = 0;
+const t = (name, fn) => {
+  fn();
+  n++;
+};
+
+t('maskMatch：首尾字母 + 长度', () => {
+  assert.ok(maskMatch('p*********5', 'phuong12345'));
+  assert.ok(maskMatch('P*********5', '@phuong12345'));
+  assert.ok(!maskMatch('p*********5', 'phuong1234')); // 长度不同
+  assert.ok(!maskMatch('p*********5', 'xhuong12345'));
+  assert.ok(!maskMatch('p*********5', 'phuong12346'));
+  assert.ok(maskMatch('buyer_demo', 'buyer_demo')); // 没打码就精确比
+  assert.ok(!maskMatch('', 'a'));
+  assert.ok(maskMatch('1******e', '1abcdeee'));
+});
+
+t('renderNote：模板字段，未知字段原样保留', () => {
+  assert.strictEqual(renderNote('【{fixedno}】{accname}', { fixedno: 1271, accname: 'buyer_demo' }), '【1271】buyer_demo');
+  assert.strictEqual(renderNote('{x}-{fixedno}', { fixedno: 3 }), '{x}-3');
+});
+
+const T0 = Date.UTC(2026, 10, 20, 12, 0, 0);
+const min = 60000;
+const rec = (id, uniqueId, dt, extra = {}) => ({ id, uniqueId, nickname: uniqueId.toUpperCase(), time: T0 + dt, code: 10 + id, codeText: 'A' + (10 + id), serial: id, content: String(id * 5), note: '', ...extra });
+const order = (id, buyer, dt = 0) => ({ id, buyer, createTime: T0 + dt, amount: 39200, amountText: '39.200₫' });
+
+t('planNotes：时间窗内匹配、超出窗口不匹配', () => {
+  const recs = [rec(1, 'phuong12345', -3 * min), rec(2, 'phuong12345', -20 * min)];
+  const [p] = planNotes([order('o1', 'p*********5')], recs, { backMin: 5, fwdMin: 0 });
+  assert.strictEqual(p.status, 'ok');
+  assert.deepStrictEqual(p.recIds, [1]);
+  assert.strictEqual(p.note, '【11】phuong12345');
+  const [q] = planNotes([order('o1', 'p*********5')], recs, { backMin: 30 });
+  assert.deepStrictEqual(q.recIds, [2, 1]); // 全部，按时间
+  const [after] = planNotes([order('o1', 'p*********5', -10 * min)], [rec(1, 'phuong12345', -8 * min)], { backMin: 0, fwdMin: 0 });
+  assert.strictEqual(after.status, 'nomatch');
+  const [after2] = planNotes([order('o1', 'p*********5', -10 * min)], [rec(1, 'phuong12345', -8 * min)], { backMin: 0, fwdMin: 5 });
+  assert.strictEqual(after2.status, 'ok');
+});
+
+t('planNotes：多人对上同一个打码 → ambiguous；取消的不算', () => {
+  const recs = [rec(1, 'phuong12345', -1 * min), rec(2, 'pxxxxxxxxx5', -2 * min)];
+  const [p] = planNotes([order('o1', 'p*********5')], recs, { backMin: 5 });
+  assert.strictEqual(p.status, 'ambiguous');
+  assert.strictEqual(p.candidates.length, 2);
+  recs[1].cancelled = true;
+  assert.strictEqual(planNotes([order('o1', 'p*********5')], recs, { backMin: 5 })[0].status, 'ok');
+});
+
+t('planNotes：流水策略 min / max / all，seqno 和 message', () => {
+  const recs = [rec(1, 'phuong12345', -4 * min), rec(2, 'phuong12345', -2 * min), rec(3, 'phuong12345', -1 * min)];
+  const o = [order('o1', 'p*********5')];
+  const tpl = '{seqno}|{message}';
+  assert.strictEqual(planNotes(o, recs, { backMin: 5, serial: 'min', template: tpl })[0].note, '1|5');
+  assert.strictEqual(planNotes(o, recs, { backMin: 5, serial: 'max', template: tpl })[0].note, '3|15');
+  assert.strictEqual(planNotes(o, recs, { backMin: 5, serial: 'all', template: tpl })[0].note, '1,2,3|5,10,15');
+});
+
+t('planNotes：不允许重复 → 别的订单用过的记录跳过；自己用过的仍可用', () => {
+  const recs = [rec(1, 'phuong12345', -1 * min)];
+  const o = [order('o2', 'p*********5')];
+  assert.strictEqual(planNotes(o, recs, { backMin: 5, used: new Map([[1, 'o1']]) })[0].status, 'used');
+  assert.strictEqual(planNotes(o, recs, { backMin: 5, used: new Map([[1, 'o2']]) })[0].status, 'ok');
+  assert.strictEqual(planNotes(o, recs, { backMin: 5, used: new Map([[1, 'o1']]), allowRepeat: true })[0].status, 'ok');
+});
+
+t('planNotes：同批两张订单，不合并时前一张用掉的后一张不用', () => {
+  const recs = [rec(1, 'phuong12345', -1 * min), rec(2, 'phuong12345', 1 * min)];
+  const orders = [order('o2', 'p*********5', 2 * min), order('o1', 'p*********5', 0)];
+  const plans = planNotes(orders, recs, { backMin: 5, merge: false });
+  const by = Object.fromEntries(plans.map((p) => [p.orderId, p]));
+  assert.deepStrictEqual(by.o1.recIds, [1]);
+  assert.deepStrictEqual(by.o2.recIds, [2]);
+});
+
+t('planNotes：合并模式 → 同一买家的订单同一条备注', () => {
+  const recs = [rec(1, 'phuong12345', -1 * min), rec(2, 'phuong12345', 1 * min)];
+  const orders = [order('o1', 'p*********5', 0), order('o2', 'p*********5', 2 * min)];
+  const plans = planNotes(orders, recs, { backMin: 5, merge: true, template: '{fixedno}/{seqno}' });
+  assert.strictEqual(plans[0].note, plans[1].note);
+  assert.strictEqual(plans[0].note, '11/1,2');
+  assert.strictEqual(plans[0].merged, 2);
+});
+
+t('combineNote：覆盖 / 追加 / 不重复追加', () => {
+  assert.strictEqual(combineNote('old', 'new', 'overwrite'), 'new');
+  assert.strictEqual(combineNote('old', 'new', 'append'), 'old new');
+  assert.strictEqual(combineNote('old new', 'new', 'append'), 'old new');
+  assert.strictEqual(combineNote('', 'new', 'append'), 'new');
+});
+
+console.log(`shopnote.test.js：${n} 项通过`);

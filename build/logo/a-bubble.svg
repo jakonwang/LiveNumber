@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2dd4bf"/><stop offset="1" stop-color="#059669"/></linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
+  <!-- 评论气泡 -->
+  <path d="M152 104h208a56 56 0 0 1 56 56v148a56 56 0 0 1-56 56H236l-78 62v-62h-6a56 56 0 0 1-56-56V160a56 56 0 0 1 56-56z" fill="#ffffff"/>
+  <!-- # 号码 -->
+  <g stroke="#0b1424" stroke-width="34" stroke-linecap="round">
+    <path d="M226 152 208 316"/><path d="M304 152 286 316"/>
+    <path d="M172 200h176"/><path d="M164 268h176"/>
+  </g>
+  <!-- 直播点 -->
+  <circle cx="402" cy="118" r="40" fill="#ef4444" stroke="#10b981" stroke-width="18"/>
+</svg>

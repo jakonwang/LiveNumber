@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- LiveNumber 标志：评论气泡里的 #（评论发号码下单）+ 红色直播点 -->
+  <defs>
+    <linearGradient id="ln-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2dd4bf"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#ln-bg)"/>
+  <path d="M164 112H348a64 64 0 0 1 64 64V288a64 64 0 0 1-64 64H248L170 414V352h-6a64 64 0 0 1-64-64V176a64 64 0 0 1 64-64z" fill="#ffffff"/>
+  <g stroke="#0b1424" stroke-width="36" stroke-linecap="round">
+    <path d="M232 160 214 304"/>
+    <path d="M300 160 282 304"/>
+    <path d="M180 206H340"/>
+    <path d="M172 258H332"/>
+  </g>
+  <circle cx="404" cy="120" r="42" fill="#ef4444" stroke="#19b594" stroke-width="20"/>
+</svg>
