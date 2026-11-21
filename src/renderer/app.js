@@ -631,6 +631,22 @@ createApp({
       res.ok ? ElMessage.success($t('编号 {0} 已重打', row.codeText)) : ElMessage.error($t('打印失败：') + res.error);
     }
     const reprintChat = (row) => reprint({ id: row.recId, codeText: row.codeText });
+    /** 弹幕流里没命中的弹幕，手动打印一单（不过监控规则） */
+    async function printChat(row) {
+      if (row.manualPrinting || row.recId) return;
+      row.manualPrinting = true;
+      let res;
+      try {
+        res = await api.invoke('chat:print', { chatId: row.id, uniqueId: row.uniqueId, nickname: row.nickname, comment: row.comment, time: row.time, simulated: !!row.simulated });
+      } catch (e) {
+        return ElMessage.error($t('打印失败：') + cleanErr(e));
+      } finally {
+        row.manualPrinting = false;
+      }
+      row.hit = true;
+      row.result = $t('手动打印');
+      res.ok ? ElMessage.success($t('编号 {0} 已打印', res.codeText)) : ElMessage.error($t('打印失败：') + res.error);
+    }
 
     // ---------- 名单 ----------
     async function loadNames() {
@@ -1021,7 +1037,7 @@ createApp({
       resetCustomers, resetSerial, applyShare, pingShare, loadHistory, exportHistory, reprint,
       switchNames, blacklistUser, addName, importNames, noteName, removeName,
       deleteCustomers, editCustomerCode, importCustomers, editProduct, saveProduct, deleteProducts, importProducts,
-      setRange, loadStats, showTip, backup, restore, chatRowClass, playChime, speakHit, reprintChat,
+      setRange, loadStats, showTip, backup, restore, chatRowClass, playChime, speakHit, reprintChat, printChat,
     };
   },
 })

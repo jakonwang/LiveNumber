@@ -195,6 +195,7 @@
                 <el-table-column label="" width="132">
                   <template #default="{row}">
                     <el-button v-if="row.recId && !row.cancelled" link :type="row.printStatus === 'fail' ? 'danger' : 'primary'" size="small" :disabled="row.printStatus === 'pending'" @click="reprintChat(row)">{{ $t('重打') }}</el-button>
+                    <el-button v-else-if="!row.recId" link type="primary" size="small" :loading="row.manualPrinting" @click="printChat(row)">{{ $t('打印') }}</el-button>
                     <el-button link type="danger" size="small" @click="blacklistUser(row)">{{ $t('拉黑') }}</el-button>
                   </template>
                 </el-table-column>

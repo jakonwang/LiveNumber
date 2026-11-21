@@ -373,6 +373,16 @@ async function run(ctx) {
       const okRow = await rowText();
       const cardBtn = await win.webContents.executeJavaScript(`!![...document.querySelectorAll('.hit-card')].find(c => c.textContent.includes('rp_user'))?.querySelector('.h-reprint')`);
       check('弹幕流点重打成功', after.status === 'ok' && after.reprints === 1 && /已打印/.test(okRow) && cardBtn && calls === 2, JSON.stringify({ s: after.status, r: after.reprints, calls, cardBtn }));
+      // 没命中的弹幕也有「打印」：点了直接分配编号打印
+      handleChat({ uniqueId: 'mp_user', nickname: 'Manual', comment: 'Có kèm đệm không', simulated: true });
+      await wait(600);
+      const mpText = () => win.webContents.executeJavaScript(`[...document.querySelectorAll('.stream .el-table__body tr')].find(tr => tr.textContent.includes('mp_user'))?.textContent || ''`);
+      const mpBefore = await mpText();
+      await win.webContents.executeJavaScript(`(() => { const tr = [...document.querySelectorAll('.stream .el-table__body tr')].find(tr => tr.textContent.includes('mp_user')); [...tr.querySelectorAll('button')].find(b => b.textContent.trim() === '打印').click(); return true; })()`);
+      await wait(900);
+      const mpRec = store.queryHistory({ uniqueId: 'mp_user' }).rows[0];
+      const mpAfter = await mpText();
+      check('未命中弹幕手动打印', /打印/.test(mpBefore) && mpRec && mpRec.status === 'ok' && mpRec.manual && mpRec.content === 'Có kèm đệm không' && /已打印/.test(mpAfter) && /重打/.test(mpAfter) && calls === 3, mpAfter.replace(/\s+/g, ' ').slice(0, 100));
       printer.print = realPrint;
       store.setSettings({ print: { enabled: false } });
     }

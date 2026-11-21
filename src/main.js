@@ -1008,6 +1008,21 @@ function registerIpc() {
   h('live:showBrowser', () => browserLive.show());
 
   h('sim:comment', (msg) => handleChat({ ...msg, simulated: true }));
+  // 弹幕流里手动打印一条（没命中规则 / 被拦下的弹幕）：不过规则，直接分配编号并打印
+  h('chat:print', async ({ chatId, uniqueId, nickname, comment, time, simulated } = {}) => {
+    if (!uniqueId || !comment) throw new Error($t('记录不存在'));
+    const match = matchComment(comment, store.settings.monitor);
+    const rec = await createRecord({
+      uniqueId,
+      nickname,
+      content: match?.content ?? comment,
+      number: match?.number ?? null,
+      simulated: !!simulated,
+      time: time || Date.now(),
+      extra: { chatId, manual: true },
+    });
+    return { ok: rec.status === 'ok' || rec.status === 'off', status: rec.status, codeText: rec.codeText, error: rec.error || '' };
+  });
 
   h('grab:reset', () => {
     grab.reset();
