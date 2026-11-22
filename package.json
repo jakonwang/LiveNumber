@@ -1,6 +1,6 @@
 {
   "name": "livenumber",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "TikTok 鐩存挱寮瑰箷鎵ｅ彿鎵撳崟宸ュ叿",
   "main": "src/main.js",
   "scripts": {
