@@ -362,12 +362,12 @@ async function run(ctx) {
       await win.webContents.executeJavaScript(`[...document.querySelectorAll('.nav-item')].find(n => n.textContent.includes('直播控制台'))?.click(); true;`);
       handleChat({ uniqueId: 'rp_user', nickname: 'Reprint', comment: '199', simulated: true });
       await wait(900);
-      const rowText = () => win.webContents.executeJavaScript(`[...document.querySelectorAll('.stream .el-table__body tr')].find(tr => tr.textContent.includes('rp_user'))?.textContent || ''`);
+      const rowText = () => win.webContents.executeJavaScript(`[...document.querySelectorAll('.stream .chat-body .chat-row')].find(tr => tr.textContent.includes('rp_user'))?.textContent || ''`);
       const failRow = await rowText();
       const rec = store.queryHistory({ uniqueId: 'rp_user' }).rows[0];
       check('打印失败显示在弹幕流', rec && rec.status === 'fail' && /打印失败/.test(failRow) && /重打/.test(failRow), failRow.replace(/\s+/g, ' ').slice(0, 80));
       printer.print = async () => (++calls, { ok: true });
-      await win.webContents.executeJavaScript(`(() => { const tr = [...document.querySelectorAll('.stream .el-table__body tr')].find(tr => tr.textContent.includes('rp_user')); [...tr.querySelectorAll('button')].find(b => b.textContent.trim() === '重打').click(); return true; })()`);
+      await win.webContents.executeJavaScript(`(() => { const tr = [...document.querySelectorAll('.stream .chat-body .chat-row')].find(tr => tr.textContent.includes('rp_user')); [...tr.querySelectorAll('button')].find(b => b.textContent.trim() === '重打').click(); return true; })()`);
       await wait(900);
       const after = store.getHistory(rec.id);
       const okRow = await rowText();
@@ -376,9 +376,9 @@ async function run(ctx) {
       // 没命中的弹幕也有「打印」：点了直接分配编号打印
       handleChat({ uniqueId: 'mp_user', nickname: 'Manual', comment: 'Có kèm đệm không', simulated: true });
       await wait(600);
-      const mpText = () => win.webContents.executeJavaScript(`[...document.querySelectorAll('.stream .el-table__body tr')].find(tr => tr.textContent.includes('mp_user'))?.textContent || ''`);
+      const mpText = () => win.webContents.executeJavaScript(`[...document.querySelectorAll('.stream .chat-body .chat-row')].find(tr => tr.textContent.includes('mp_user'))?.textContent || ''`);
       const mpBefore = await mpText();
-      await win.webContents.executeJavaScript(`(() => { const tr = [...document.querySelectorAll('.stream .el-table__body tr')].find(tr => tr.textContent.includes('mp_user')); [...tr.querySelectorAll('button')].find(b => b.textContent.trim() === '打印').click(); return true; })()`);
+      await win.webContents.executeJavaScript(`(() => { const tr = [...document.querySelectorAll('.stream .chat-body .chat-row')].find(tr => tr.textContent.includes('mp_user')); [...tr.querySelectorAll('button')].find(b => b.textContent.trim() === '打印').click(); return true; })()`);
       await wait(900);
       const mpRec = store.queryHistory({ uniqueId: 'mp_user' }).rows[0];
       const mpAfter = await mpText();
@@ -432,7 +432,7 @@ async function run(ctx) {
     check('切换越南语', vi.lang === 'vi' && vi.title === 'LIVE CHỐT ĐƠN' && /Mẫu mặc định/.test(vi.tpl) && /Bảng điều khiển/.test(vi.nav || ''), JSON.stringify(vi));
     handleChat({ uniqueId: 'vi_user', nickname: 'Vi', comment: '1', simulated: true });
     await wait(500);
-    const viRow = await win.webContents.executeJavaScript(`[...document.querySelectorAll('.stream .el-table__body tr')].find(tr => tr.textContent.includes('vi_user'))?.textContent || ''`);
+    const viRow = await win.webContents.executeJavaScript(`[...document.querySelectorAll('.stream .chat-body .chat-row')].find(tr => tr.textContent.includes('vi_user'))?.textContent || ''`);
     check('越南语界面弹幕结果', /Chốt|Số đã|Đặt lại|Không có/.test(viRow), viRow.replace(/\s+/g, ' ').slice(0, 80));
     await win.webContents.executeJavaScript(`window.api.invoke('lang:set', 'zh').then(() => location.reload())`);
     await wait(2500);

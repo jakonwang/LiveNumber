@@ -234,7 +234,7 @@ html, body { margin: 0; height: 100%; background: var(--bg-root); color: var(--t
 
 /* 弹幕流 */
 .stream { display: flex; flex-direction: column; min-height: 360px; flex: 1; }
-.stream .el-table { flex: 1; }
+
 .sim-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 16px 10px; padding: 8px 10px; border-radius: 10px; background: var(--bg-input); border: 1px dashed var(--border-base); }
 .sim-label { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); margin-right: 4px; }
 
@@ -266,6 +266,7 @@ html, body { margin: 0; height: 100%; background: var(--bg-root); color: var(--t
 /* ---------- 通用表格页 ---------- */
 .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 14px 16px; }
 .table-wrap { padding: 0 8px 8px; }
+.pager { display: flex; justify-content: flex-end; padding: 8px 4px 0; }
 .count-tag { font-size: 12px; color: var(--text-muted); }
 .count-tag b { color: var(--primary-hover); }
 .page-grid { display: flex; flex-direction: column; gap: 16px; }
@@ -403,3 +404,17 @@ html, body { margin: 0; height: 100%; background: var(--bg-root); color: var(--t
 .el-checkbox { height: auto; min-height: 24px; max-width: 100%; }
 .el-checkbox__label { white-space: normal; line-height: 1.4; }
 .tight-form .el-form-item__label { line-height: 1.3; align-items: center; }
+
+/* ---------- 弹幕流（轻量列表，代替 el-table） ---------- */
+.chat-list { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 8px 8px; border-bottom: 1px solid var(--border-base); overflow-x: auto; overflow-y: hidden; }
+.chat-head, .chat-body { min-width: 610px; }
+.chat-body { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; contain: strict; }
+.chat-row { display: grid; grid-template-columns: 72px minmax(80px, 1fr) minmax(80px, 1fr) minmax(90px, 1fr) minmax(140px, 1.5fr) 132px; align-items: center; min-height: 34px; padding: 0 4px; border-bottom: 1px solid var(--border-base); font-size: 12px; color: var(--text-secondary); }
+.chat-row > span { padding: 0 8px; min-width: 0; }
+.chat-row .cell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-body .chat-row:hover { background: var(--bg-card-hover); }
+.chat-row.row-hit { background: color-mix(in srgb, var(--primary) 7%, transparent); }
+.chat-head { background: var(--bg-panel-soft); color: var(--text-muted); font-weight: 600; min-height: 32px; padding-right: 12px; }
+.chat-ops { display: flex; align-items: center; gap: 0; white-space: nowrap; }
+.chat-ops .el-button + .el-button { margin-left: 10px; }
+.chat-empty { padding: 32px 0; text-align: center; color: var(--text-muted); font-size: 12px; }

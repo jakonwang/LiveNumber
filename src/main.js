@@ -42,10 +42,16 @@ function sendStats() {
   send('stats', { ...stats, queue: printer.pending, counters: store.data.counters });
 }
 
+let lastPanelJson = '';
 function sendPanel() {
   const slots = grab.active(3);
   const auc = auction.status();
-  send('grab', { slots, auction: auc });
+  // 每 250ms 调一次：内容没变就不推给界面，否则空闲时界面也会每秒整页重绘 4 次
+  const json = JSON.stringify({ slots, auction: auc });
+  if (json !== lastPanelJson) {
+    lastPanelJson = json;
+    send('grab', { slots, auction: auc });
+  }
   bigScreen.broadcast(screenState(slots, auc));
 }
 
@@ -937,6 +943,7 @@ function registerIpc() {
   h('country:apply', (code) => applyCountry(code));
   h('init', async () => {
     fileLog?.write('info', '界面初始化完成');
+    lastPanelJson = ''; // 界面刷新过（如切换语言），抢单面板要重新推一次
     return initPayload();
   });
   const initPayload = async () => ({

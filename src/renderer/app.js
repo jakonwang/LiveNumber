@@ -17,6 +17,37 @@ const money = (v) => (v == null || v === '' || isNaN(Number(v)) ? v ?? '' : Numb
 const cleanErr = (e) => String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 const startOfDay = (d = new Date()) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
+/**
+ * 前端分页：Element Plus 表格不是虚拟滚动，一次渲染上千行要卡好几秒，所以大列表只渲染当前页。
+ * source：完整列表（computed / ref）；sorters：列 prop → 比较函数（配合 sortable="custom" 对全部数据排序）
+ */
+function usePager(source, sorters = {}, size = 100) {
+  const p = reactive({ page: 1, size, prop: '', order: '' });
+  const sorted = computed(() => {
+    const list = source.value;
+    const fn = sorters[p.prop];
+    if (!fn || !p.order) return list;
+    const out = list.slice().sort(fn);
+    return p.order === 'descending' ? out.reverse() : out;
+  });
+  p.total = computed(() => source.value.length);
+  p.rows = computed(() => sorted.value.slice((p.page - 1) * p.size, p.page * p.size));
+  p.sort = ({ prop, order }) => {
+    p.prop = prop || '';
+    p.order = order || '';
+    p.page = 1;
+  };
+  watch(
+    () => p.total,
+    (n) => {
+      const last = Math.max(1, Math.ceil(n / p.size));
+      if (p.page > last) p.page = last;
+    }
+  );
+  return p;
+}
+const PAGE_SIZES = [50, 100, 200, 500];
+
 const STATUS_TEXT = { idle: $t('未连接'), connecting: $t('连接中'), connected: $t('直播中'), ended: $t('已下播'), error: $t('连接出错') };
 const VN_NAMES = ['Nguyễn An', 'Trần Bình', 'Lê Chi', 'Phạm Dũng', 'Hoàng Giang', 'Võ Hà', 'Đặng Khoa', 'Bùi Lan'];
 const RANGES = [
@@ -163,7 +194,15 @@ createApp({
     const liveBusy = computed(() => ['connecting', 'connected'].includes(status.status));
     const statusShort = computed(() => (STATUS_TEXT[status.status] || status.status) + (status.status === 'connected' && status.mode === 'browser' ? $t(' · 浏览器') : ''));
     const statusText = computed(() => (status.user && status.status !== 'idle' ? $t('@{0}：{1}', status.user, statusShort.value) : statusShort.value));
-    const shownChats = computed(() => (onlyHits.value ? chats.value.filter((c) => c.hit) : chats.value));
+    // 弹幕流表格只显示最新 CHAT_SHOW 条（内存里留 CHAT_KEEP 条给「只看命中」筛选），表格行数少，刷新才快
+    const CHAT_SHOW = 150;
+    const CHAT_KEEP = 500;
+    const shownChats = computed(() => (onlyHits.value ? chats.value.filter((c) => c.hit) : chats.value).slice(0, CHAT_SHOW));
+    // 最新命中卡片高亮 8 秒。不在模板里直接用 now（每秒变），否则整个界面每秒重绘一次
+    const freshHitId = computed(() => {
+      const h = hits.value[0];
+      return h && !h.cancelled && now.value - h.time < 8000 ? h.id : null;
+    });
     const codeText = (n) => (s.code?.prefixEnabled ? s.code.prefix || '' : '') + n;
     const nextCodePreview = computed(() => (s.code?.mode === 'fill' ? $t('最小空号') : counters.nextCode));
     const filterBy = (list, q, keys) => {
@@ -173,6 +212,22 @@ createApp({
     const shownNames = computed(() => filterBy(nl.list, nl.search, (b) => `${b.uniqueId} ${b.nickname} ${b.note}`));
     const shownCustomers = computed(() => filterBy(cs.list, cs.search, (c) => `${c.uniqueId} ${c.nickname} ${codeText(c.code)}`));
     const shownProducts = computed(() => filterBy(pd.list, pd.search, (p) => `${p.code} ${p.name} ${p.spec}`));
+    // ---------- 分页（大列表只渲染一页） ----------
+    const byNum = (k) => (a, b) => (Number(a[k]) || 0) - (Number(b[k]) || 0);
+    const nlPage = usePager(shownNames);
+    const csPage = usePager(shownCustomers, { code: byNum('code'), addedAt: byNum('addedAt') });
+    const pdPage = usePager(shownProducts, { code: byNum('code'), price: byNum('price'), stock: byNum('stock'), sold: byNum('sold') });
+    const hsPage = usePager(computed(() => history.rows));
+    watch(() => nl.search, () => (nlPage.page = 1));
+    watch(() => cs.search, () => (csPage.page = 1));
+    watch(() => pd.search, () => (pdPage.page = 1));
+    const csTable = ref(null);
+    const pdTable = ref(null);
+    const shopTable = ref(null);
+    const historyRowClass = ({ row }) => (row.cancelled ? 'row-cancelled' : '');
+    const sortByCode = (a, b) => a.code - b.code;
+    const sortByQty = (a, b) => a.qty - b.qty;
+    const sortByTotal = (a, b) => a.total - b.total;
     const productSold = computed(() => pd.list.reduce((a, p) => a + (p.sold || 0), 0));
     const amountFont = computed(() => {
       const len = money(auctionState.value.amount || 0).length;
@@ -183,20 +238,40 @@ createApp({
     const demoHit = { codeText: '45', nickname: 'Dương Phước Huy', content: '15', productName: 'Áo thun' };
 
     // ---------- 日志 / 事件 ----------
+    let logSeq = 0;
+    let logScroll = false;
     function pushLog(l) {
-      logs.value.push(l);
+      logs.value.push({ ...l, key: ++logSeq });
       if (logs.value.length > 300) logs.value.splice(0, logs.value.length - 300);
+      if (logScroll) return;
+      logScroll = true;
       nextTick(() => {
+        logScroll = false;
         if (logBox.value) logBox.value.scrollTop = logBox.value.scrollHeight;
       });
     }
 
     api.on('log', pushLog);
     api.on('status', (x) => Object.assign(status, { error: '', ...x }));
+    // 弹幕高峰一秒几十条：先攒起来，每 200ms 合并刷新一次表格，不是来一条重绘一次
+    let chatQueue = [];
+    let chatTimer = null;
+    function flushChats() {
+      chatTimer = null;
+      if (!chatQueue.length) return;
+      const next = chatQueue.reverse().concat(chats.value);
+      chatQueue = [];
+      if (next.length > CHAT_KEEP) next.length = CHAT_KEEP;
+      chats.value = next;
+    }
     api.on('chat', (c) => {
-      chats.value.unshift(c);
-      if (chats.value.length > 500) chats.value.length = 500;
+      chatQueue.push(c);
+      if (!chatTimer) chatTimer = setTimeout(flushChats, 200);
     });
+    function clearChats() {
+      chatQueue = [];
+      chats.value = [];
+    }
     api.on('record', (rec) => {
       const i = history.rows.findIndex((r) => r.id === rec.id);
       if (i >= 0) history.rows[i] = { ...rec };
@@ -211,7 +286,7 @@ createApp({
     /** 弹幕流命中行 ← 打印记录（编号、打印状态），用于显示和「重打」 */
     function linkChat(rec) {
       if (!rec || rec.chatId == null) return;
-      const c = chats.value.find((x) => x.id === rec.chatId);
+      const c = chatQueue.find((x) => x.id === rec.chatId) || chats.value.find((x) => x.id === rec.chatId);
       if (c) Object.assign(c, { recId: rec.id, codeText: rec.codeText, printStatus: rec.status, cancelled: !!rec.cancelled });
     }
     api.on('hit', (rec) => {
@@ -323,6 +398,8 @@ createApp({
       (k === 'bad' && o.match !== 'ok' && !o.noted);
     const shopCount = (k) => sp.orders.filter((o) => shopIs(o, k)).length;
     const shownShopOrders = computed(() => filterBy(sp.orders.filter((o) => shopIs(o, sp.filter)), sp.search, (o) => `${o.id} ${o.buyer} ${o.user || ''} ${o.nickname || ''}`));
+    const spPage = usePager(shownShopOrders);
+    watch(() => [sp.filter, sp.search, sp.loadedStatus], () => (spPage.page = 1));
     const shopPreview = computed(() => {
       const f = { accname: 'buyer_demo', nickname: 'Buyer Demo', fixedno: 1271, sortno: codeText(1271), seqno: '35,36', prtremark: s.hostNote || '', message: '15,22', orderid: '580000000000000001', ordertime: '11-20 18:28', amount: '39.200₫' };
       return String(s.shop?.template || '').replace(/\{(\w+)\}/g, (m, k) => (k in f ? f[k] : m)).trim();
@@ -379,6 +456,7 @@ createApp({
         const status = sp.orderStatus;
         sp.orders = await api.invoke('shop:orders', status);
         sp.loadedStatus = status;
+        shopTable.value?.clearSelection();
         sp.selected = [];
         const ok = sp.orders.filter((o) => o.match === 'ok').length;
         const label = (SHOP_STATUS.find((x) => x.key === status) || SHOP_STATUS[0]).label;
@@ -625,6 +703,7 @@ createApp({
       const res = await api.invoke('history:query', historyQuery());
       history.total = res.total;
       history.rows = res.rows;
+      hsPage.page = 1;
     }
     async function exportHistory() {
       const res = await api.invoke('history:export', historyQuery());
@@ -710,6 +789,7 @@ createApp({
       const ok = await ElMessageBox.confirm($t('删除选中的 {0} 个客户编号？', cs.selected.length), $t('批量删除'), { type: 'warning' }).catch(() => false);
       if (!ok) return;
       await api.invoke('customers:delete', cs.selected.map((c) => c.uniqueId));
+      csTable.value?.clearSelection(); // 跨页勾选（reserve-selection）要手动清掉
       loadCustomers();
     }
     async function importCustomers() {
@@ -776,6 +856,7 @@ createApp({
       const ok = await ElMessageBox.confirm($t('删除 {0} 个商品？', rows.length), $t('删除商品'), { type: 'warning' }).catch(() => false);
       if (!ok) return;
       await api.invoke('products:delete', rows.map((r) => r.code));
+      pdTable.value?.clearSelection();
       loadProducts();
     }
     async function importProducts() {
@@ -993,10 +1074,6 @@ createApp({
       if (ok) api.invoke('data:restore').catch((e) => ElMessage.error(cleanErr(e)));
     }
 
-    function chatRowClass({ row }) {
-      return row.hit ? 'row-hit' : '';
-    }
-
     onMounted(async () => {
       const init = await api.invoke('init');
       Object.assign(s, init.snapshot.settings);
@@ -1046,7 +1123,9 @@ createApp({
       resetCustomers, resetSerial, applyShare, pingShare, loadHistory, exportHistory, reprint,
       switchNames, blacklistUser, addName, importNames, noteName, removeName,
       deleteCustomers, editCustomerCode, importCustomers, editProduct, saveProduct, deleteProducts, importProducts,
-      setRange, loadStats, showTip, backup, restore, chatRowClass, playChime, speakHit, reprintChat, printChat,
+      setRange, loadStats, showTip, backup, restore, playChime, speakHit, reprintChat, printChat,
+      PAGE_SIZES, nlPage, csPage, pdPage, hsPage, spPage, csTable, pdTable, shopTable, historyRowClass, sortByCode, sortByQty, sortByTotal,
+      freshHitId, clearChats, fmtPct: (v) => Math.round(v * 100) + '%',
     };
   },
 })
