@@ -77,6 +77,8 @@ function shopPlan(orders) {
     allowRepeat: s.allowRepeat,
     merge: s.merge,
     used: store.usedRecords(),
+    customers: store.listCustomers(),
+    formatCode: (c) => store.formatCode(c),
   });
 }
 
@@ -90,15 +92,15 @@ function shopRows(orders) {
   });
 }
 
-async function shopFetch(sinceMs = 0) {
+async function shopFetch(sinceMs = 0, status = 'to_ship') {
   const s = store.settings.shop;
-  const orders = await shop.listToShip({ pageDelay: s.pageDelay, sinceMs });
+  const orders = await shop.listToShip({ pageDelay: s.pageDelay, sinceMs, status });
   if (!sinceMs) shopJob.orders = new Map();
   for (const o of orders) shopJob.orders.set(o.id, o);
   return orders;
 }
 
-const skipText = (k) => ({ nomatch: $t('时间窗内没找到对得上的扣号记录'), ambiguous: $t('多个用户对得上，无法确定'), used: $t('对应的扣号记录已经备注到别的订单') }[k]);
+const skipText = (k) => ({ nomatch: $t('客户编号里没找到对得上的客户'), ambiguous: $t('多个用户对得上，无法确定'), used: $t('对应的扣号记录已经备注到别的订单') }[k]);
 
 /** 批量备注。ids 为空 = 当前列表全部；auto = 自动备注（只写没写过的） */
 async function runShopNotes(ids, { auto = false } = {}) {
@@ -979,7 +981,7 @@ function registerIpc() {
     shopJob.orders = new Map();
     log($t('已退出店铺登录'), 'warn');
   });
-  h('shop:orders', async () => shopRows(await shopFetch()));
+  h('shop:orders', async (status) => shopRows(await shopFetch(0, ['to_ship', 'collect', 'shipped'].includes(status) ? status : 'to_ship')));
   h('shop:replan', () => shopRows([...shopJob.orders.values()]));
   h('shop:noteBatch', (ids) => runShopNotes(ids));
   h('shop:stop', () => {

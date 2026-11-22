@@ -389,7 +389,7 @@ async function run(ctx) {
     const clickNav = (label) => win.webContents.executeJavaScript(`[...document.querySelectorAll('.nav-item')].find(n => n.textContent.includes('${label}'))?.click(); true;`);
     let img = await capImg(win.webContents);
     fs.writeFileSync(SMOKE, img.toPNG());
-    for (const [label, suffix] of [['数据统计', '-stats.png'], ['商品信息', '-products.png'], ['系统设置', '-settings.png'], ['发货汇总', '-summary.png'], ['打印历史', '-history.png'], ['客户编号', '-customers.png']]) {
+    for (const [label, suffix] of [['数据统计', '-stats.png'], ['商品信息', '-products.png'], ['系统设置', '-settings.png'], ['发货汇总', '-summary.png'], ['打印历史', '-history.png'], ['客户编号', '-customers.png'], ['订单备注', '-shop.png']]) {
       await clickNav(label);
       await wait(900);
       fs.writeFileSync(out(suffix), (await capImg(win.webContents)).toPNG());

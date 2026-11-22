@@ -13,6 +13,12 @@ const { BrowserWindow, session } = require('electron');
 const PARTITION = 'persist:tiktokshop';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// 订单列表筛选条件（2026-11 在卖家中心实测：search_tab 101 = To ship，102 = Shipped）
+const ORDER_STATUS = {
+  to_ship: { order_status: { value: ['1'] }, search_tab: { value: ['101'] } }, // 待发货
+  collect: { order_status: { value: ['2'] }, search_tab: { value: ['101'] } }, // 待揽收
+  shipped: { search_tab: { value: ['102'] } }, // 已发货 / 待收货
+};
 
 class ShopClient {
   constructor({ getHost, onLog = () => {}, onStatus = () => {} } = {}) {
@@ -46,7 +52,11 @@ class ShopClient {
     return { loggedIn: this.loggedIn, shop: this.shop, host: this.host };
   }
 
-  /** 隐藏窗口：打开卖家中心域名下一个很轻的地址，之后在里面 fetch */
+  /**
+   * 隐藏窗口：打开卖家中心真实页面，之后在里面 fetch。
+   * 必须是真页面：卖家中心的安全 SDK 会改写 window.fetch，给请求自动加 msToken / X-Bogus / X-Gnarly。
+   * 订单列表等接口没有签名会返回 code 10000（get_all_sellers 不校验，所以光看登录状态看不出来）。
+   */
   async ensureWin() {
     const host = this.host;
     if (this.win && !this.win.isDestroyed() && this.winHost === host) return this.win;
@@ -58,11 +68,22 @@ class ShopClient {
     this.win.webContents.setAudioMuted(true);
     this.winHost = host;
     try {
-      await this.win.loadURL(`https://${host}/favicon.ico`);
+      await this.win.loadURL(`https://${host}/order?tab=to_ship`);
     } catch (e) {
-      // favicon 打不开也没关系，只要停在这个域名下就能发请求
+      // SPA 跳转可能让 loadURL 报 ERR_ABORTED，只要停在这个域名下就行
       if (!this.win.webContents.getURL().includes(host)) throw new Error($t('打不开卖家中心：') + e.message);
     }
+    // 等安全 SDK 把 fetch 包一层（最多 15 秒）
+    const deadline = Date.now() + 15000;
+    let signed = false;
+    while (Date.now() < deadline && !this.win.isDestroyed()) {
+      try {
+        signed = await this.win.webContents.executeJavaScript('!/\\[native code\\]/.test(Function.prototype.toString.call(window.fetch))', true);
+      } catch {}
+      if (signed) break;
+      await sleep(500);
+    }
+    if (!signed) this.onLog($t('卖家中心页面的请求签名没有就绪，部分接口可能失败'), 'warn');
     return this.win;
   }
 
@@ -222,22 +243,29 @@ class ShopClient {
     this.onStatus(this.status());
   }
 
-  /** 读待发货订单（分页读完），返回整理好的订单 */
-  async listToShip({ pageDelay = 800, maxPages = 20, sinceMs = 0 } = {}) {
+  /**
+   * 读订单（分页读完），返回整理好的订单。
+   * status: 'to_ship' 待发货 | 'collect' 待揽收（已安排发货、快递未取件）| 'shipped' 已发货（运输中，待买家收货）
+   */
+  async listToShip({ pageDelay = 800, maxPages = 20, sinceMs = 0, status = 'to_ship' } = {}) {
     if (!this.loggedIn) await this.check();
     if (!this.loggedIn) throw new Error($t('店铺还没登录'));
+    const condition = ORDER_STATUS[status] || ORDER_STATUS.to_ship;
     const out = [];
     const count = 50;
     for (let page = 0; page < maxPages; page++) {
       const j = await this.post('/api/fulfillment/order/list', {
-        search_condition: { condition_list: { order_status: { value: ['1'] }, search_tab: { value: ['101'] } } },
+        search_condition: { condition_list: condition },
         offset: page * count,
         count,
         sort_info: '11',
         search_cursor: '',
         pagination_type: 0,
       });
-      if (j.code !== 0) throw new Error($t('读取订单失败：{0}', j.message || j.msg || j.code));
+      if (j.code !== 0) {
+        this.onLog(`order/list → ${JSON.stringify(j).slice(0, 500)}`, 'warn');
+        throw new Error($t('读取订单失败：{0}', j.message || j.msg || j.code));
+      }
       const rows = (j.data && j.data.main_orders) || [];
       out.push(...rows.map(parseOrder));
       const total = Number(j.data && j.data.total_count) || 0;

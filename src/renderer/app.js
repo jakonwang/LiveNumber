@@ -101,11 +101,16 @@ createApp({
     const pd = reactive({ search: '', list: [], selected: [], dialog: false, form: {} });
     const sp = reactive({
       status: { loggedIn: false, shop: null, host: '' }, fields: [], busy: false, loading: false, checking: false,
-      orders: [], selected: [], filter: 'all', search: '',
+      orders: [], selected: [], filter: 'all', search: '', orderStatus: 'to_ship', loadedStatus: 'to_ship',
       cookieDialog: false, cookieText: '', cookieLoading: false,
       noteDialog: false, noteRow: null, noteText: '', noteOld: '', noteLoading: false, noteSaving: false,
     });
     window.__lnTest = Object.assign(window.__lnTest || {}, { sp }); // 界面巡检用
+    const SHOP_STATUS = [
+      { key: 'to_ship', label: $t('待发货') },
+      { key: 'collect', label: $t('待揽收') },
+      { key: 'shipped', label: $t('已发货（待收货）') },
+    ];
     const SHOP_FILTERS = [
       { key: 'all', label: $t('全部') },
       { key: 'todo', label: $t('待备注') },
@@ -371,9 +376,13 @@ createApp({
     async function loadShopOrders() {
       sp.loading = true;
       try {
-        sp.orders = await api.invoke('shop:orders');
+        const status = sp.orderStatus;
+        sp.orders = await api.invoke('shop:orders', status);
+        sp.loadedStatus = status;
+        sp.selected = [];
         const ok = sp.orders.filter((o) => o.match === 'ok').length;
-        ElMessage.success($t('读取到 {0} 张待发货订单，匹配上 {1} 张', sp.orders.length, ok));
+        const label = (SHOP_STATUS.find((x) => x.key === status) || SHOP_STATUS[0]).label;
+        ElMessage.success($t('读取到 {0} 张{1}订单，匹配上 {2} 张', sp.orders.length, label, ok));
       } catch (e) {
         ElMessage.error(cleanErr(e));
       } finally {
@@ -1029,7 +1038,7 @@ createApp({
       openSummary, summaryAction, printSummaryLabels,
       api, ready, page, version, compact, toggleSidebar, togglePrint, screenOpen, obsUrl, toggleScreen, applyObs, copyText, now, s, counters, stats, status, printers, userData, logs, logBox, chats, hits, onlyHits, grabSlots,
       LANGS, COUNTRIES, uiLang, changeLang, applyCountry,
-      sp, SHOP_FILTERS, shopTplInput, shopCount, shownShopOrders, shopPreview, insertShopField, shopCheck, shopCookie, shopLogout, loadShopOrders, noteBatch, openShopNote, saveShopNote,
+      sp, SHOP_STATUS, SHOP_FILTERS, shopTplInput, shopCount, shownShopOrders, shopPreview, insertShopField, shopCheck, shopCookie, shopLogout, loadShopOrders, noteBatch, openShopNote, saveShopNote,
       showDesigner, auctionState, lanUrls, shareRunning, counts, today, sim, hq, history, nl, cs, pd, st, NAV, RANGES, currentNav,
       liveBusy, statusShort, statusText, shownChats, nextCodePreview, shownNames, shownCustomers, shownProducts, productSold, amountFont,
       maxBuyer, maxNumber, demoHit, chartWrap, chart, tip,

@@ -487,7 +487,8 @@
       <div v-if="page === 'shop'" class="shop-grid">
         <div class="panel shop-orders">
           <div class="toolbar">
-            <el-button size="small" type="primary" :loading="sp.loading" :disabled="!sp.status.loggedIn" @click="loadShopOrders"><ui-icon name="refresh" :size="13"></ui-icon>&nbsp;{{ $t('读取待发货订单') }}</el-button>
+            <el-select v-model="sp.orderStatus" size="small" style="width:132px" :disabled="sp.loading || sp.busy"><el-option v-for="o in SHOP_STATUS" :key="o.key" :value="o.key" :label="o.label"></el-option></el-select>
+            <el-button size="small" type="primary" :loading="sp.loading" :disabled="!sp.status.loggedIn || sp.busy" @click="loadShopOrders"><ui-icon name="refresh" :size="13"></ui-icon>&nbsp;{{ $t('读取订单') }}</el-button>
             <div class="seg shop-seg">
               <button type="button" v-for="f in SHOP_FILTERS" :key="f.key" :class="{ on: sp.filter === f.key }" @click="sp.filter = f.key">{{ f.label }} {{ shopCount(f.key) }}</button>
             </div>
@@ -498,7 +499,7 @@
             <el-button size="small" type="primary" :loading="sp.busy" :disabled="!sp.orders.length" @click="noteBatch(false)"><ui-icon name="note" :size="13"></ui-icon>&nbsp;{{ $t('批量备注') }}</el-button>
           </div>
           <div class="table-wrap">
-            <el-table :data="shownShopOrders" size="small" height="calc(100vh - 196px)" row-key="id" :empty-text="sp.status.loggedIn ? $t('点「读取待发货订单」') : $t('先在右边登录店铺')" @selection-change="(r) => sp.selected = r">
+            <el-table :data="shownShopOrders" size="small" height="calc(100vh - 196px)" row-key="id" :empty-text="sp.status.loggedIn ? $t('选择订单状态，点「读取订单」') : $t('先在右边登录店铺')" @selection-change="(r) => sp.selected = r">
               <el-table-column type="selection" width="38"></el-table-column>
               <el-table-column :label="$t('订单')" width="168">
                 <template #default="{row}">

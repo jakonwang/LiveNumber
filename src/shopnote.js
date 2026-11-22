@@ -3,7 +3,7 @@ const { t: $t } = require('./i18n/i18n');
 // TikTok Shop 订单备注：订单 ↔ 扣号记录匹配 + 备注模板（纯逻辑，不依赖 Electron，方便测试）
 //
 // 卖家后台的订单只给打码后的买家用户名，如 "p*********5"（首字母 + 尾字母 + 总长度）。
-// 匹配方法：在下单时间前后的时间窗内，找用户名能对上这个打码格式的扣号记录。
+// 匹配方法：拿这个打码格式去客户编号表里找客户 → 客户编号；时间窗内的扣号记录只用来补充字段 / 消除歧义。
 
 /** 打码用户名是否对得上：长度相同，没打码的字符逐个相同（不分大小写） */
 function maskMatch(masked, uniqueId) {
@@ -66,44 +66,63 @@ function noteFields(order, recs) {
 
 /**
  * 给一批订单规划备注。
- * orders:  [{ id, createTime(ms), buyer(打码用户名), amount, amountText }]
- * records: 扣号记录 [{ id, time, uniqueId, nickname, code, codeText, serial, content, note, cancelled }]
- * opt: { template, backMin, fwdMin, serial: 'all'|'min'|'max', allowRepeat, merge, used: Set(recordId) }
- * 返回 [{ orderId, status: 'ok'|'nomatch'|'ambiguous'|'used', note, user, nickname, code, recIds, candidates, merged }]
+ * 主匹配：订单的打码昵称 → 客户编号表（先按用户名比，对不上再按昵称比）→ 客户编号。
+ * 扣号记录只是补充：时间窗内该用户的扣号记录用来填流水序号 / 弹幕等字段；多个客户对得上同一个打码时，
+ * 用时间窗内有扣号的那一个来定。
+ * orders:    [{ id, createTime(ms), buyer(打码昵称), amount, amountText }]
+ * records:   扣号记录 [{ id, time, uniqueId, nickname, code, codeText, serial, content, note, cancelled }]
+ * opt: { customers: [{uniqueId, nickname, code}], formatCode(code), template, backMin, fwdMin,
+ *        serial: 'all'|'min'|'max', allowRepeat, merge, used: Set(recordId) }
+ * 返回 [{ orderId, status: 'ok'|'nomatch'|'ambiguous', note, user, nickname, code, recIds, candidates, merged }]
  */
 function planNotes(orders, records, opt = {}) {
   const back = (Number(opt.backMin) || 0) * 60000;
   const fwd = (Number(opt.fwdMin) || 0) * 60000;
+  const fmt = opt.formatCode || ((c) => String(c));
   // used：Set(记录id) 或 Map(记录id → 用过它的订单号)；同一张订单自己用过的不算
   const usedMap = opt.used instanceof Map ? new Map(opt.used) : new Map([...(opt.used || [])].map((id) => [id, null]));
   const isUsed = (rid, oid) => usedMap.has(rid) && usedMap.get(rid) !== oid;
   const live = records.filter((r) => r && !r.cancelled && r.uniqueId && r.status !== 'blocked');
+  const customers = (opt.customers || []).filter((c) => c && c.uniqueId && c.code !== undefined && c.code !== null);
   const plans = [];
   // 按下单时间先后处理：不合并、不允许重复时，前一张订单用掉的扣号，后一张不再用
   const sorted = orders.slice().sort((a, b) => a.createTime - b.createTime);
   for (const o of sorted) {
     const from = o.createTime - back;
     const to = o.createTime + fwd;
-    const hits = live.filter((r) => r.time >= from && r.time <= to && maskMatch(o.buyer, r.uniqueId));
-    const users = uniq(hits.map((r) => r.uniqueId));
-    const base = { orderId: o.id, order: o, note: '', user: '', nickname: '', code: null, recIds: [], candidates: users };
-    if (!users.length) {
+    const inWin = live.filter((r) => r.time >= from && r.time <= to);
+    // 1) 客户编号表：用户名对得上的优先，没有再看昵称
+    let cands = customers.filter((c) => maskMatch(o.buyer, c.uniqueId));
+    if (!cands.length) cands = customers.filter((c) => maskMatch(o.buyer, c.nickname));
+    // 2) 时间窗内有扣号、但还不在客户表里的用户（理论上很少）也算候选
+    for (const r of inWin) {
+      if (!cands.some((c) => c.uniqueId === r.uniqueId) && (maskMatch(o.buyer, r.uniqueId) || maskMatch(o.buyer, r.nickname))) {
+        cands.push({ uniqueId: r.uniqueId, nickname: r.nickname || '', code: r.code });
+      }
+    }
+    const base = { orderId: o.id, order: o, note: '', user: '', nickname: '', code: null, recIds: [], candidates: cands.map((c) => c.uniqueId) };
+    if (!cands.length) {
       plans.push({ ...base, status: 'nomatch' });
       continue;
     }
-    if (users.length > 1) {
-      plans.push({ ...base, status: 'ambiguous' });
-      continue;
+    // 多个客户对得上：只保留时间窗内扣过号的
+    if (cands.length > 1) {
+      const active = cands.filter((c) => inWin.some((r) => r.uniqueId === c.uniqueId));
+      if (active.length !== 1) {
+        plans.push({ ...base, status: 'ambiguous', candidates: (active.length ? active : cands).map((c) => c.uniqueId) });
+        continue;
+      }
+      cands = active;
     }
-    let mine = hits.sort((a, b) => a.time - b.time || a.id - b.id);
+    const cust = cands[0];
+    let mine = inWin.filter((r) => r.uniqueId === cust.uniqueId).sort((a, b) => a.time - b.time || a.id - b.id);
     if (!opt.allowRepeat) mine = mine.filter((r) => !isUsed(r.id, o.id));
-    if (!mine.length) {
-      plans.push({ ...base, status: 'used', user: users[0], nickname: hits[0].nickname || '', code: hits[0].code });
-      continue;
-    }
-    if (opt.serial === 'min') mine = [mine[0]];
-    else if (opt.serial === 'max') mine = [mine[mine.length - 1]];
-    plans.push({ ...base, status: 'ok', user: users[0], nickname: mine[0].nickname || '', code: mine[0].code, recIds: mine.map((r) => r.id), recs: mine });
+    if (opt.serial === 'min') mine = mine.slice(0, 1);
+    else if (opt.serial === 'max') mine = mine.slice(-1);
+    // 客户编号以客户表为准；没有扣号记录时，用客户表信息补一条“虚拟记录”给模板用
+    const head = { uniqueId: cust.uniqueId, nickname: cust.nickname || (mine[0] && mine[0].nickname) || '', code: cust.code, codeText: fmt(cust.code) };
+    const recs = mine.length ? mine.map((r, i) => (i === 0 ? { ...r, ...head } : r)) : [head];
+    plans.push({ ...base, status: 'ok', user: cust.uniqueId, nickname: head.nickname, code: cust.code, recIds: mine.map((r) => r.id), recs });
     if (!opt.allowRepeat && !opt.merge) for (const r of mine) usedMap.set(r.id, o.id);
   }
   // 合并订单：同一个买家的多张订单写同一条备注（流水号、弹幕合在一起）
@@ -112,10 +131,13 @@ function planNotes(orders, records, opt = {}) {
     for (const p of plans) if (p.status === 'ok') byUser.set(p.user, [...(byUser.get(p.user) || []), p]);
     for (const group of byUser.values()) {
       if (group.length < 2) continue;
-      const recs = uniq(group.flatMap((p) => p.recs)).sort((a, b) => a.time - b.time || a.id - b.id);
+      const all = group.flatMap((p) => p.recs);
+      const real = [...new Map(all.filter((r) => r.id !== undefined).map((r) => [r.id, r])).values()].sort((a, b) => a.time - b.time || a.id - b.id);
+      const head = all[0];
+      const recs = real.length ? real.map((r, i) => (i === 0 ? { ...r, uniqueId: head.uniqueId, nickname: head.nickname, code: head.code, codeText: head.codeText } : r)) : [head];
       for (const p of group) {
         p.recs = recs;
-        p.recIds = recs.map((r) => r.id);
+        p.recIds = real.map((r) => r.id);
         p.merged = group.length;
       }
     }

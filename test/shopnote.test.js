@@ -64,8 +64,11 @@ t('planNotes：流水策略 min / max / all，seqno 和 message', () => {
 t('planNotes：不允许重复 → 别的订单用过的记录跳过；自己用过的仍可用', () => {
   const recs = [rec(1, 'phuong12345', -1 * min)];
   const o = [order('o2', 'p*********5')];
-  assert.strictEqual(planNotes(o, recs, { backMin: 5, used: new Map([[1, 'o1']]) })[0].status, 'used');
-  assert.strictEqual(planNotes(o, recs, { backMin: 5, used: new Map([[1, 'o2']]) })[0].status, 'ok');
+  const usedElsewhere = planNotes(o, recs, { backMin: 5, used: new Map([[1, 'o1']]) })[0];
+  assert.strictEqual(usedElsewhere.status, 'ok'); // 客户编号照样能写，只是不带这条扣号的流水
+  assert.deepStrictEqual(usedElsewhere.recIds, []);
+  assert.strictEqual(usedElsewhere.code, 11);
+  assert.deepStrictEqual(planNotes(o, recs, { backMin: 5, used: new Map([[1, 'o2']]) })[0].recIds, [1]);
   assert.strictEqual(planNotes(o, recs, { backMin: 5, used: new Map([[1, 'o1']]), allowRepeat: true })[0].status, 'ok');
 });
 
@@ -85,6 +88,34 @@ t('planNotes：合并模式 → 同一买家的订单同一条备注', () => {
   assert.strictEqual(plans[0].note, plans[1].note);
   assert.strictEqual(plans[0].note, '11/1,2');
   assert.strictEqual(plans[0].merged, 2);
+});
+
+t('planNotes：按客户编号表匹配（不需要扣号记录）', () => {
+  const customers = [
+    { uniqueId: 'kimanh_9902', nickname: 'Kim Anh', code: 333 },
+    { uniqueId: 'phuong12345', nickname: 'Phương', code: 7 },
+  ];
+  const [p] = planNotes([order('o1', 'k*********2')], [], { customers, formatCode: (c) => 'A' + c, template: '【{fixedno}】{accname}|{nickname}|{sortno}|{seqno}' });
+  assert.strictEqual(p.status, 'ok');
+  assert.strictEqual(p.code, 333);
+  assert.strictEqual(p.note, '【333】kimanh_9902|Kim Anh|A333|');
+  // 用户名对不上时按昵称匹配
+  const [q] = planNotes([order('o1', 'K*****h')], [], { customers });
+  assert.strictEqual(q.code, 333);
+  // 客户表里没有
+  assert.strictEqual(planNotes([order('o1', 'z***9')], [], { customers })[0].status, 'nomatch');
+});
+
+t('planNotes：客户表多人对得上 → 用时间窗内的扣号定人；客户编号以客户表为准', () => {
+  const customers = [
+    { uniqueId: 'phuong12345', nickname: 'P1', code: 7 },
+    { uniqueId: 'pxxxxxxxxx5', nickname: 'P2', code: 8 },
+  ];
+  assert.strictEqual(planNotes([order('o1', 'p*********5')], [], { customers })[0].status, 'ambiguous');
+  const recs = [rec(1, 'pxxxxxxxxx5', -1 * min)]; // 记录里的 code 是 11，客户表是 8
+  const [p] = planNotes([order('o1', 'p*********5')], recs, { customers, backMin: 5, template: '{fixedno}/{seqno}/{message}' });
+  assert.strictEqual(p.status, 'ok');
+  assert.strictEqual(p.note, '8/1/5');
 });
 
 t('combineNote：覆盖 / 追加 / 不重复追加', () => {
