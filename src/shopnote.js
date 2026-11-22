@@ -45,6 +45,11 @@ function renderNote(tpl, f) {
     .trim();
 }
 
+// 多个客户对得上同一个打码时，往前看多久的扣号记录来定人
+const DISAMBIG_MS = 24 * 3600000;
+// 也看下单后多久（有人先下单、后在直播间扣号）
+const DISAMBIG_AFTER_MS = 2 * 3600000;
+
 const uniq = (arr) => [...new Set(arr.filter((x) => x !== undefined && x !== null && String(x) !== ''))];
 
 /** 由订单和命中的扣号记录生成模板字段 */
@@ -105,9 +110,14 @@ function planNotes(orders, records, opt = {}) {
       plans.push({ ...base, status: 'nomatch' });
       continue;
     }
-    // 多个客户对得上：只保留时间窗内扣过号的
+    // 多个客户对得上：先看回溯时间窗内谁扣过号；还定不了，再看下单前 24 小时到下单后 2 小时（同一场直播，买家常常扣号后几十分钟才下单）
     if (cands.length > 1) {
-      const active = cands.filter((c) => inWin.some((r) => r.uniqueId === c.uniqueId));
+      const wideFrom = o.createTime - Math.max(back, DISAMBIG_MS);
+      const wideTo = o.createTime + Math.max(fwd, DISAMBIG_AFTER_MS);
+      const wide = live.filter((r) => r.time >= wideFrom && r.time <= wideTo);
+      const activeIn = (list) => cands.filter((c) => list.some((r) => r.uniqueId === c.uniqueId));
+      let active = activeIn(inWin);
+      if (active.length !== 1) active = activeIn(wide);
       if (active.length !== 1) {
         plans.push({ ...base, status: 'ambiguous', candidates: (active.length ? active : cands).map((c) => c.uniqueId) });
         continue;
@@ -159,4 +169,4 @@ function combineNote(oldText, newText, mode) {
   return `${oldText} ${newText}`.slice(0, 500);
 }
 
-module.exports = { maskMatch, renderNote, noteFields, planNotes, combineNote, NOTE_FIELDS, fmtTime };
+module.exports = { maskMatch, renderNote, noteFields, planNotes, combineNote, NOTE_FIELDS, fmtTime, DISAMBIG_MS };

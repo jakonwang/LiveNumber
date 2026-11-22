@@ -15,7 +15,7 @@ const { ShareServer, requestCode, ping, lanAddresses } = require('./share');
 const { BrowserLive } = require('./browser-live');
 const { BigScreen } = require('./screen');
 const { ShopClient } = require('./shop');
-const { planNotes, combineNote, NOTE_FIELDS } = require('./shopnote');
+const { planNotes, combineNote, NOTE_FIELDS, DISAMBIG_MS } = require('./shopnote');
 /** 当前国家的数字格式（金额分组），如 vi-VN：120.000 */
 const numLocale = () => countryOf(store && store.settings.country).numLocale;
 const fmtMoney = (v) => Number(v || 0).toLocaleString(numLocale());
@@ -67,7 +67,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 function shopPlan(orders) {
   const s = store.settings.shop;
   if (!orders.length) return [];
-  const minT = Math.min(...orders.map((o) => o.createTime)) - (Number(s.backMin) || 0) * 60000;
+  // 多一天的记录：多个客户对得上同一个打码时，用下单前 24 小时谁扣过号来定人
+  const minT = Math.min(...orders.map((o) => o.createTime)) - Math.max((Number(s.backMin) || 0) * 60000, DISAMBIG_MS);
   const recs = store.data.history.filter((h) => h.time >= minT);
   return planNotes(orders, recs, {
     template: s.template,

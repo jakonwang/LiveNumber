@@ -118,6 +118,28 @@ t('planNotes：客户表多人对得上 → 用时间窗内的扣号定人；客
   assert.strictEqual(p.note, '8/1/5');
 });
 
+t('planNotes：时间窗内定不了人 → 看下单前 24 小时谁扣过号', () => {
+  const customers = [
+    { uniqueId: 'phuong12345', nickname: 'P1', code: 7 },
+    { uniqueId: 'pxxxxxxxxx5', nickname: 'P2', code: 8 },
+    { uniqueId: 'pyyyyyyyyy5', nickname: 'P3', code: 9 },
+  ];
+  const o = [order('o1', 'p*********5')];
+  // 只有 P2 在 1 小时前扣过号（超出 5 分钟回溯） → 定为 P2
+  assert.strictEqual(planNotes(o, [rec(1, 'pxxxxxxxxx5', -60 * min)], { customers, backMin: 5 })[0].code, 8);
+  // 两人都在 24 小时内扣过号，5 分钟内只有 P3 → P3
+  assert.strictEqual(planNotes(o, [rec(1, 'pxxxxxxxxx5', -60 * min), rec(2, 'pyyyyyyyyy5', -2 * min)], { customers, backMin: 5 })[0].code, 9);
+  // 两人都只在 24 小时内扣过号 → 仍然多人对得上
+  const amb = planNotes(o, [rec(1, 'pxxxxxxxxx5', -60 * min), rec(2, 'pyyyyyyyyy5', -30 * min)], { customers, backMin: 5 })[0];
+  assert.strictEqual(amb.status, 'ambiguous');
+  assert.strictEqual(amb.candidates.length, 2);
+  // 先下单、10 分钟后才扣号 → 也能定人；3 小时后的不算
+  assert.strictEqual(planNotes(o, [rec(1, 'pxxxxxxxxx5', 10 * min)], { customers, backMin: 5 })[0].code, 8);
+  assert.strictEqual(planNotes(o, [rec(1, 'pxxxxxxxxx5', 180 * min)], { customers, backMin: 5 })[0].status, 'ambiguous');
+  // 超过 24 小时的不算
+  assert.strictEqual(planNotes(o, [rec(1, 'pxxxxxxxxx5', -25 * 60 * min)], { customers, backMin: 5 })[0].status, 'ambiguous');
+});
+
 t('combineNote：覆盖 / 追加 / 不重复追加', () => {
   assert.strictEqual(combineNote('old', 'new', 'overwrite'), 'new');
   assert.strictEqual(combineNote('old', 'new', 'append'), 'old new');
